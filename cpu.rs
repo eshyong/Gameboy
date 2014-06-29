@@ -51,6 +51,7 @@ impl CPU {
         }
     }
 
+    // Print out register values for debugging
     fn dump_registers(&self) {
         println!("accumulator: {}", self.regs.accum);
         println!("flags: {}", self.regs.flags);
@@ -64,18 +65,22 @@ impl CPU {
         println!("pc: {}", self.regs.pc);
     }
 
+    // Get BC as a 16 bit value
     fn bc (&mut self) -> uint {
         ((self.regs.b << 8) & self.regs.c) as uint
     }
 
+    // Get DE as a 16 bit value
     fn de(&mut self) -> uint {
         ((self.regs.d << 8) & self.regs.e) as uint
     }
 
+    // Get HL as a 16 bit value
     fn hl(&mut self) -> uint {
         ((self.regs.h << 8) & self.regs.l) as uint
     }
 
+    // Get HL with post decrement
     fn hl_dec(&mut self) -> uint {
         let val = ((self.regs.h << 8) & self.regs.l) as uint;
         if self.regs.l == 0 {
@@ -85,6 +90,7 @@ impl CPU {
         val
     }
 
+    // Get HL with post increment
     fn hl_inc(&mut self) -> uint {
         let val = ((self.regs.h << 8) & self.regs.l) as uint;
         self.regs.l += 1;
@@ -94,17 +100,54 @@ impl CPU {
         val
     }
 
+    // Increment the PC and gets the next byte
     fn next_byte(&mut self) -> u8 {
         self.regs.pc += 1;
         self.mem[self.regs.pc as uint]
     }
 
+    // Get byte in memory specified by location
     fn get_byte(&self, location: uint) -> u8 {
         self.mem[location]
     }
 
+    // Set memory value at location to byte
     fn set_byte(&mut self, byte: u8, location: uint) {
         self.mem[location] = byte;
+    }
+
+    // Set the zero flag
+    fn set_zero(&mut self) {
+        self.regs.flags |= 0x80;
+    }
+
+    // Set the subtract flag
+    fn set_subtract(&mut self) {
+        self.regs.flags |= 0x40;
+    }
+
+    fn set_half_carry(&mut self) {
+        self.regs.flags |= 0x20;
+    }
+    
+    fn set_carry(&mut self) {
+        self.regs.flags |= 0x10;
+    }
+
+    fn reset_zero(&mut self) {
+        self.regs.flags &= 0x7F;
+    }
+
+    fn reset_subtract(&mut self) {
+        self.regs.flags &= 0xBF;
+    }
+
+    fn reset_half_carry(&mut self) {
+        self.regs.flags &= 0xDF;
+    }
+
+    fn reset_carry(&mut self) {
+        self.regs.flags &= 0xEF;
     }
 
     fn decode_op(&mut self) {
@@ -213,7 +256,51 @@ impl CPU {
             0x7E => { let hl = self.hl(); self.regs.accum = self.get_byte(hl); }                 // LD A, (HL)
             0x7F => { self.regs.accum = self.regs.accum; }                                       // LD A, A
 
-            0x76 => { println!("HALT not implemented yet."); } // HALT
+            // INC/DEC instructions
+            0x03 => { self.regs.c += 1; if self.regs.c == 0 { self.regs.b += 1; } } // INC BC
+            0x13 => { self.regs.e += 1; if self.regs.e == 0 { self.regs.d += 1; } } // INC DE
+            0x23 => { self.regs.l += 1; if self.regs.l == 0 { self.regs.h += 1; } } // INC HL
+            0x33 => { self.regs.sp += 1; }                                          // INC SP
+            
+            0x04 => { self.regs.b += 1; if self.regs.b == 0 { self.set_zero(); } self.reset_subtract(); } // INC B
+            0x14 => { self.regs.d += 1; if self.regs.d == 0 { self.set_zero(); } self.reset_subtract(); } // INC D
+            0x24 => { self.regs.h += 1; if self.regs.h == 0 { self.set_zero(); } self.reset_subtract(); } // INC H
+            0x34 => {                                                                                     // INC (HL)
+                let hl = self.hl();
+                self.mem[hl] += 1;
+                if self.get_byte(hl) == 0 {
+                    self.set_zero();
+                }
+                self.reset_subtract();
+            }
+
+            0x05 => { self.regs.b -= 1; if self.regs.b == 0 { self.set_zero(); } self.set_subtract(); } // DEC B
+            0x15 => { self.regs.d -= 1; if self.regs.d == 0 { self.set_zero(); } self.set_subtract(); } // DEC D
+            0x25 => { self.regs.h -= 1; if self.regs.h == 0 { self.set_zero(); } self.set_subtract(); } // DEC H
+            0x35 => {                                                                                   // DEC (HL)
+                let hl = self.hl();
+                self.mem[hl] -= 1;
+                if self.get_byte(hl) == 0 {
+                    self.set_zero();
+                }
+                self.set_subtract();
+            }
+
+            0x0B => { self.regs.c -= 1; if self.regs.c == 0 { self.regs.b -= 1 } } // DEC BC
+            0x1B => { self.regs.e -= 1; if self.regs.e == 0 { self.regs.d -= 1 } } // DEC DE
+            0x2B => { self.regs.h -= 1; if self.regs.h == 0 { self.regs.l -= 1 } } // DEC HL
+            0x3B => { self.regs.sp -= 1; }                                         // DEC SP
+
+            0x0C => { self.regs.c += 1; if self.regs.c == 0 { self.set_zero(); } self.reset_subtract(); }         // INC C
+            0x1C => { self.regs.e += 1; if self.regs.e == 0 { self.set_zero(); } self.reset_subtract(); }         // INC E
+            0x2C => { self.regs.l += 1; if self.regs.l == 0 { self.set_zero(); } self.reset_subtract(); }         // INC L
+            0x3C => { self.regs.accum += 1; if self.regs.accum == 0 { self.set_zero(); } self.reset_subtract(); } // INC A
+
+            0x0D => { self.regs.c -= 1; if self.regs.c == 0 { self.set_zero(); } self.set_subtract(); }         // DEC C
+            0x1D => { self.regs.e -= 1; if self.regs.e == 0 { self.set_zero(); } self.set_subtract(); }         // DEC E
+            0x2D => { self.regs.l -= 1; if self.regs.l == 0 { self.set_zero(); } self.set_subtract(); }         // DEC L
+            0x3D => { self.regs.accum -= 1; if self.regs.accum == 0 { self.set_zero(); } self.set_subtract(); } // DEC A
+
             _ => println!("Opcode not implemented yet.")
         };
         self.regs.pc += 1;
@@ -226,3 +313,5 @@ fn main() {
     cpu.dump_registers();
     cpu.decode_op();
 }
+
+// End of cpu.rs
