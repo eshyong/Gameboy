@@ -1,3 +1,8 @@
+static ZERO:       u8 = 0x80;
+static SUBTRACT:   u8 = 0x40;
+static HALF_CARRY: u8 = 0x20;
+static CARRY:      u8 = 0x10;
+
 struct Regs {
     // Accumulator and flags (AF):
     // Flags are as follows:
@@ -5,7 +10,7 @@ struct Regs {
     // Z = zero flag: set when the result of an instruction is 0.
     // N = subtract flag: set after a subtract operation
     // H = half-carry flag: 
-    // C = carry flag: 
+    // C = carry flag: set after a result leads to a carry
     // bits 3 - 0: always set to 0
     accum: u8,
     flags: u8,
@@ -116,42 +121,125 @@ impl CPU {
         self.mem[location] = byte;
     }
 
-    // Set the zero flag
-    fn set_zero(&mut self) {
-        self.regs.flags |= 0x80;
+    // Sets flag using boolean on, taking in a bit position as input.
+    fn set_flag(&mut self, flag: u8, on: bool) {
+        if on {
+            self.regs.flags |= flag;
+        } else {
+            self.regs.flags &= !flag;
+        }
     }
 
-    // Set the subtract flag
-    fn set_subtract(&mut self) {
-        self.regs.flags |= 0x40;
+    fn get_flag(&self, flag: u8) -> u8 {
+        (self.regs.flags & flag != 0) as u8
     }
 
-    fn set_half_carry(&mut self) {
-        self.regs.flags |= 0x20;
-    }
-    
-    fn set_carry(&mut self) {
-        self.regs.flags |= 0x10;
+    // Adds a value to the accumulator, setting the carry and zero flags
+    // as appropriate. Subtract flag is set to 0 when this is called.
+    // TODO: half-carry flag
+    fn add(&mut self, val: u8) {
+        let accum = self.regs.accum;
+        self.set_flag(CARRY, (accum > 0xFF - val) || (val > 0xFF - accum));
+        
+        self.regs.accum += val;
+
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, false);
     }
 
-    fn reset_zero(&mut self) {
-        self.regs.flags &= 0x7F;
+    // Adds a value with carry bit to the accumulator, setting the carry and zero flags
+    // as appropriate. Subtract flag is set to 0 when this is called.
+    // TODO: half-carry flag
+    fn adc(&mut self, val: u8) {
+        let accum = self.regs.accum;
+        let carry = self.get_flag(CARRY);
+        self.set_flag(CARRY, (accum + carry > 0xFF - val) || (val + carry > 0xFF - accum));
+
+        self.regs.accum += val + carry;
+
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, false);
     }
 
-    fn reset_subtract(&mut self) {
-        self.regs.flags &= 0xBF;
+    // Subtracts a value from the accumulator, setting the carry and zero flags 
+    // as appropriate. Subtract flag is set to 1 when this is called.
+    // TODO: half-carry flag
+    fn sub(&mut self, val: u8) {
+        let accum = self.regs.accum;
+        self.set_flag(CARRY, accum < val);
+
+        self.regs.accum -= val;
+
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, true);
     }
 
-    fn reset_half_carry(&mut self) {
-        self.regs.flags &= 0xDF;
+    // Subtracts a value and carry bit from the accumulator, setting the carry and zero flags
+    // as appropriate. Subtract flag is set to 1 when this is called.
+    // TODO: half-carry flag
+    fn sbc(&mut self, val: u8) {
+        let accum = self.regs.accum;
+        let carry = self.get_flag(CARRY);
+        self.set_flag(CARRY, accum < val + carry);
+
+        self.regs.accum -= val + carry;
+
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, true);
     }
 
-    fn reset_carry(&mut self) {
-        self.regs.flags &= 0xEF;
+    // Performs logical AND on accumulator and val, setting the zero flag as appropriate.
+    // Half-carry flag is set to 1, while subtract and carry flags are set to 0.
+    fn and(&mut self, val: u8) {
+        self.regs.accum &= val;
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, false);
+        self.set_flag(CARRY, false);
     }
 
-    fn decode_op(&mut self) {
+    // Performs a logical XOR on accumulator and val, setting the zero flag as appropriate.
+    // Subtract, carry, and half-carry flags are all set to 0.
+    fn xor(&mut self, val: u8) {
+        self.regs.accum ^= val;
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, false);
+        self.set_flag(CARRY, false);
+    }
+
+    // Performs a logical OR on accumulator and val, setting the zero flag as appropriate.
+    // Subtract, carry, and half-carry flags are all set to 0.
+    fn or(&mut self, val: u8) {
+        self.regs.accum |= val;
+        let result = self.regs.accum;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, false);
+        self.set_flag(CARRY, false);
+    }
+
+    // Performs a logical compare on accumulator and val, storing result in 
+    // Sets zero and carry flag as appropriate. Subtract flag is set to 1.
+    fn cp(&mut self, val: u8) {
+        let accum = self.regs.accum;
+        let result = accum - val;
+        self.set_flag(ZERO, result == 0);
+        self.set_flag(SUBTRACT, true);
+        self.set_flag(CARRY, accum >= val);
+    }
+
+    // Executes one fetch-decode-execute cycle on the CPU
+    fn step(&mut self) {
         let op = self.mem[self.regs.pc as uint];
+        self.decode_op(op);
+        self.regs.pc += 1;
+    }
+
+    fn decode_op(&mut self, op: u8) {
         match op {
             // NOP
             0x00 => println!("bork"),
@@ -172,12 +260,28 @@ impl CPU {
             0x26 => { self.regs.h = self.next_byte(); }                                           // LD H, d8
             0x36 => { let byte = self.next_byte(); let hl = self.hl(); self.set_byte(byte, hl); } // LD (HL), d8
 
-            0x08 => { // LD (a16), SP
+            0x08 => {                                               // LD (a16), SP
                 let sp = self.regs.sp;
                 let mut loc = self.next_byte() as uint;
                 self.set_byte(((sp & 0xFF00) >> 8) as u8, loc);
                 loc = self.next_byte() as uint;
                 self.set_byte(sp as u8, loc);
+            }
+            0xE0 => { let loc = 0xFF00 & (self.next_byte() as uint); let accum = self.regs.accum; self.set_byte(accum, loc); } // LD ($FF00 + a8), A
+            0xF0 => { let loc = 0xFF00 & (self.next_byte() as uint); let byte = self.get_byte(loc); self.regs.accum = byte; }  // LD A, ($FF00 + a8)
+            0xE2 => { let loc = 0xFF00 & (self.regs.c as uint); let accum = self.regs.accum; self.set_byte(accum, loc); }      // LD (C), A
+            0xF2 => { let loc = 0xFF00 & (self.regs.c as uint); let byte = self.get_byte(loc); self.regs.accum = byte; }       // LD A, (C)
+
+            0xEA => {                                           // LD (a16), A
+                let mut loc = self.next_byte() as uint; 
+                loc = (loc << 8) & self.next_byte() as uint; 
+                let byte = self.regs.accum;
+                self.set_byte(byte, loc);
+            }
+            0xFA => {                                           // LD A, (a16)
+                let mut loc = self.next_byte() as uint;
+                loc = (loc << 8) & self.next_byte() as uint;
+                self.regs.accum = self.get_byte(loc);
             }
 
             0x0A => { let bc = self.bc(); self.regs.accum = self.get_byte(bc); }     // LD A, (BC)
@@ -262,28 +366,30 @@ impl CPU {
             0x23 => { self.regs.l += 1; if self.regs.l == 0 { self.regs.h += 1; } } // INC HL
             0x33 => { self.regs.sp += 1; }                                          // INC SP
             
-            0x04 => { self.regs.b += 1; if self.regs.b == 0 { self.set_zero(); } self.reset_subtract(); } // INC B
-            0x14 => { self.regs.d += 1; if self.regs.d == 0 { self.set_zero(); } self.reset_subtract(); } // INC D
-            0x24 => { self.regs.h += 1; if self.regs.h == 0 { self.set_zero(); } self.reset_subtract(); } // INC H
+            0x04 => { self.regs.b += 1; if self.regs.b == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); } // INC B
+            0x14 => { self.regs.d += 1; if self.regs.d == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); } // INC D
+            0x24 => { self.regs.h += 1; if self.regs.h == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); } // INC H
             0x34 => {                                                                                     // INC (HL)
                 let hl = self.hl();
-                self.mem[hl] += 1;
-                if self.get_byte(hl) == 0 {
-                    self.set_zero();
+                let byte = self.get_byte(hl) + 1;
+                self.set_byte(byte, hl);
+                if byte == 0 {
+                    self.set_flag(ZERO, true);
                 }
-                self.reset_subtract();
+                self.set_flag(SUBTRACT, false);
             }
 
-            0x05 => { self.regs.b -= 1; if self.regs.b == 0 { self.set_zero(); } self.set_subtract(); } // DEC B
-            0x15 => { self.regs.d -= 1; if self.regs.d == 0 { self.set_zero(); } self.set_subtract(); } // DEC D
-            0x25 => { self.regs.h -= 1; if self.regs.h == 0 { self.set_zero(); } self.set_subtract(); } // DEC H
-            0x35 => {                                                                                   // DEC (HL)
+            0x05 => { self.regs.b -= 1; if self.regs.b == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); } // DEC B
+            0x15 => { self.regs.d -= 1; if self.regs.d == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); } // DEC D
+            0x25 => { self.regs.h -= 1; if self.regs.h == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); } // DEC H
+            0x35 => {                                                                                                       // DEC (HL)
                 let hl = self.hl();
-                self.mem[hl] -= 1;
-                if self.get_byte(hl) == 0 {
-                    self.set_zero();
+                let byte = self.get_byte(hl) - 1;
+                self.set_byte(byte, hl);
+                if byte == 0 {
+                    self.set_flag(ZERO, true);
                 }
-                self.set_subtract();
+                self.set_flag(SUBTRACT, true);
             }
 
             0x0B => { self.regs.c -= 1; if self.regs.c == 0 { self.regs.b -= 1 } } // DEC BC
@@ -291,19 +397,106 @@ impl CPU {
             0x2B => { self.regs.h -= 1; if self.regs.h == 0 { self.regs.l -= 1 } } // DEC HL
             0x3B => { self.regs.sp -= 1; }                                         // DEC SP
 
-            0x0C => { self.regs.c += 1; if self.regs.c == 0 { self.set_zero(); } self.reset_subtract(); }         // INC C
-            0x1C => { self.regs.e += 1; if self.regs.e == 0 { self.set_zero(); } self.reset_subtract(); }         // INC E
-            0x2C => { self.regs.l += 1; if self.regs.l == 0 { self.set_zero(); } self.reset_subtract(); }         // INC L
-            0x3C => { self.regs.accum += 1; if self.regs.accum == 0 { self.set_zero(); } self.reset_subtract(); } // INC A
+            0x0C => { self.regs.c += 1; if self.regs.c == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); }         // INC C
+            0x1C => { self.regs.e += 1; if self.regs.e == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); }         // INC E
+            0x2C => { self.regs.l += 1; if self.regs.l == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); }         // INC L
+            0x3C => { self.regs.accum += 1; if self.regs.accum == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, false); } // INC A
 
-            0x0D => { self.regs.c -= 1; if self.regs.c == 0 { self.set_zero(); } self.set_subtract(); }         // DEC C
-            0x1D => { self.regs.e -= 1; if self.regs.e == 0 { self.set_zero(); } self.set_subtract(); }         // DEC E
-            0x2D => { self.regs.l -= 1; if self.regs.l == 0 { self.set_zero(); } self.set_subtract(); }         // DEC L
-            0x3D => { self.regs.accum -= 1; if self.regs.accum == 0 { self.set_zero(); } self.set_subtract(); } // DEC A
+            0x0D => { self.regs.c -= 1; if self.regs.c == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); }         // DEC C
+            0x1D => { self.regs.e -= 1; if self.regs.e == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); }         // DEC E
+            0x2D => { self.regs.l -= 1; if self.regs.l == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); }         // DEC L
+            0x3D => { self.regs.accum -= 1; if self.regs.accum == 0 { self.set_flag(ZERO, true); } self.set_flag(SUBTRACT, true); } // DEC A
+
+            // ADD instructions
+            0x80 => { let val = self.regs.b; self.add(val); }                           // ADD B
+            0x81 => { let val = self.regs.c; self.add(val); }                           // ADD C
+            0x82 => { let val = self.regs.d; self.add(val); }                           // ADD D
+            0x83 => { let val = self.regs.e; self.add(val); }                           // ADD E
+            0x84 => { let val = self.regs.h; self.add(val); }                           // ADD H
+            0x85 => { let val = self.regs.l; self.add(val); }                           // ADD L
+            0x86 => { let hl = self.hl(); let val = self.get_byte(hl); self.add(val); } // ADD (HL)
+            0x87 => { let val = self.regs.accum; self.add(val); }                       // ADD A
+            0xC6 => { let val = self.next_byte(); self.add(val); }                      // ADD d8
+
+            // ADC instructions
+            0x88 => { let val = self.regs.b; self.adc(val); }                           // ADC B
+            0x89 => { let val = self.regs.c; self.adc(val); }                           // ADC C
+            0x8A => { let val = self.regs.d; self.adc(val); }                           // ADC D
+            0x8B => { let val = self.regs.e; self.adc(val); }                           // ADC E
+            0x8C => { let val = self.regs.h; self.adc(val); }                           // ADC H
+            0x8D => { let val = self.regs.l; self.adc(val); }                           // ADC L
+            0x8E => { let hl = self.hl(); let val = self.get_byte(hl); self.adc(val); } // ADC (HL)
+            0x8F => { let val = self.regs.accum; self.adc(val); }                       // ADC A
+            0xCE => { let val = self.next_byte(); self.adc(val); }                      // ADC d8
+            
+            // SUB instructions
+            0x90 => { let val = self.regs.b; self.sub(val); }                           // SUB B
+            0x91 => { let val = self.regs.c; self.sub(val); }                           // SUB C
+            0x92 => { let val = self.regs.d; self.sub(val); }                           // SUB D
+            0x93 => { let val = self.regs.e; self.sub(val); }                           // SUB E
+            0x94 => { let val = self.regs.h; self.sub(val); }                           // SUB H
+            0x95 => { let val = self.regs.l; self.sub(val); }                           // SUB L
+            0x96 => { let hl = self.hl(); let val = self.get_byte(hl); self.sub(val); } // SUB (HL)
+            0x97 => { let val = self.regs.accum; self.sub(val); }                       // SUB A
+            0xD6 => { let val = self.next_byte(); self.sub(val); }                      // SUB d8
+
+            // SBC instructions
+            0x98 => { let val = self.regs.b; self.sbc(val); }                           // SBC B
+            0x99 => { let val = self.regs.c; self.sbc(val); }                           // SBC C
+            0x9A => { let val = self.regs.d; self.sbc(val); }                           // SBC D
+            0x9B => { let val = self.regs.e; self.sbc(val); }                           // SBC E
+            0x9C => { let val = self.regs.h; self.sbc(val); }                           // SBC H
+            0x9D => { let val = self.regs.l; self.sbc(val); }                           // SBC L
+            0x9E => { let hl = self.hl(); let val = self.get_byte(hl); self.sbc(val); } // SBC (HL)
+            0x9F => { let val = self.regs.accum; self.sbc(val); }                       // SBC A
+            0xDE => { let val = self.next_byte(); self.sbc(val); }                      // SBC d8
+
+            // AND instructions
+            0xA0 => { let val = self.regs.b; self.and(val); }                           // AND B
+            0xA1 => { let val = self.regs.c; self.and(val); }                           // AND C
+            0xA2 => { let val = self.regs.d; self.and(val); }                           // AND D
+            0xA3 => { let val = self.regs.e; self.and(val); }                           // AND E
+            0xA4 => { let val = self.regs.h; self.and(val); }                           // AND H
+            0xA5 => { let val = self.regs.l; self.and(val); }                           // AND L
+            0xA6 => { let hl = self.hl(); let val = self.get_byte(hl); self.and(val); } // AND (HL)
+            0xA7 => { let val = self.regs.accum; self.and(val); }                       // AND A
+            0xE6 => { let val = self.next_byte(); self.and(val); }                      // AND d8
+
+            // XOR instructions
+            0xA8 => { let val = self.regs.b; self.xor(val); }                           // XOR B
+            0xA9 => { let val = self.regs.c; self.xor(val); }                           // XOR C
+            0xAA => { let val = self.regs.d; self.xor(val); }                           // XOR D
+            0xAB => { let val = self.regs.e; self.xor(val); }                           // XOR E
+            0xAC => { let val = self.regs.h; self.xor(val); }                           // XOR H
+            0xAD => { let val = self.regs.l; self.xor(val); }                           // XOR L
+            0xAE => { let hl = self.hl(); let val = self.get_byte(hl); self.xor(val); } // XOR (HL)
+            0xAF => { let val = self.regs.accum; self.xor(val); }                       // XOR A
+            0xEE => { let val = self.next_byte(); self.xor(val); }                      // XOR d8
+
+            // OR instructions
+            0xB0 => { let val = self.regs.b; self.or(val); }                           // OR B
+            0xB1 => { let val = self.regs.c; self.or(val); }                           // OR C
+            0xB2 => { let val = self.regs.d; self.or(val); }                           // OR D
+            0xB3 => { let val = self.regs.e; self.or(val); }                           // OR E
+            0xB4 => { let val = self.regs.h; self.or(val); }                           // OR H
+            0xB5 => { let val = self.regs.l; self.or(val); }                           // OR L
+            0xB6 => { let hl = self.hl(); let val = self.get_byte(hl); self.or(val); } // OR (HL)
+            0xB7 => { let val = self.regs.accum; self.or(val); }                       // OR A
+            0xF6 => { let val = self.next_byte(); self.or(val); }                      // OR d8
+
+            // CP instructions
+            0xB8 => { let val = self.regs.b; self.cp(val); }                           // CP B
+            0xB9 => { let val = self.regs.c; self.cp(val); }                           // CP C
+            0xBA => { let val = self.regs.d; self.cp(val); }                           // CP D
+            0xBB => { let val = self.regs.e; self.cp(val); }                           // CP E
+            0xBC => { let val = self.regs.h; self.cp(val); }                           // CP H
+            0xBD => { let val = self.regs.l; self.cp(val); }                           // CP L
+            0xBE => { let hl = self.hl(); let val = self.get_byte(hl); self.cp(val); } // CP (HL)
+            0xBF => { let val = self.regs.accum; self.cp(val); }                       // CP A
+            0xFE => { let val = self.next_byte(); self.cp(val); }                      // CP d8
 
             _ => println!("Opcode not implemented yet.")
         };
-        self.regs.pc += 1;
     }
 }
 
@@ -311,7 +504,12 @@ fn main() {
     let mut cpu: CPU = CPU::new();
     println!("It compiles!");
     cpu.dump_registers();
-    cpu.decode_op();
+    cpu.decode_op(0x80);
+    cpu.dump_registers();
+    cpu.decode_op(0x81);
+    cpu.dump_registers();
+    cpu.decode_op(0x8F);
+    cpu.dump_registers();
 }
 
 // End of cpu.rs
