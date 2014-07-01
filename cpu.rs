@@ -1,3 +1,5 @@
+#![feature(macro_rules)]
+
 static ZERO:       u8 = 0x80;
 static SUBTRACT:   u8 = 0x40;
 static HALF_CARRY: u8 = 0x20;
@@ -36,6 +38,43 @@ struct CPU {
     mem: [u8, ..0x10000],
 }
 
+macro_rules! ld {
+    ($left:expr, $val:expr, $cpu:ident) => {
+        match $left {
+            "A"    => $cpu.regs.accum = $val,
+            "B"    => $cpu.regs.b = $val,
+            "C"    => $cpu.regs.c = $val,
+            "D"    => $cpu.regs.d = $val,
+            "E"    => $cpu.regs.e = $val,
+            "H"    => $cpu.regs.h = $val,
+            "L"    => $cpu.regs.l = $val,
+            "(BC)" => { 
+                let bc = $cpu.bc();
+                $cpu.set_byte($val, bc);
+            }
+            "(DE)" => {
+                let de = $cpu.de();
+                $cpu.set_byte($val, de);
+            }
+            "(HL)" => {
+                let hl = $cpu.hl();
+                $cpu.set_byte($val, hl);
+            }
+            "(HL+)" => {
+                let hl = $cpu.hl();
+                $cpu.set_byte($val, hl);
+                $cpu.inc_hl();
+            }
+            "(HL-)" => {
+                let hl = $cpu.hl();
+                $cpu.set_byte($val, hl);
+                $cpu.inc_hl();
+            }
+            _ => println!("don't recognize that register"),
+        };
+    };
+}
+
 impl CPU {
     fn new() -> CPU {
         CPU {
@@ -49,7 +88,7 @@ impl CPU {
                 e: 0,
                 h: 0,
                 l: 0,
-                sp: 0,
+                sp: 0xFFFE,
                 pc: 0,
             },
             mem: [0, ..0x10000],
@@ -85,30 +124,92 @@ impl CPU {
         ((self.regs.h << 8) & self.regs.l) as uint
     }
 
-    // Get HL with post decrement
-    fn hl_dec(&mut self) -> uint {
-        let val = ((self.regs.h << 8) & self.regs.l) as uint;
-        if self.regs.l == 0 {
-            self.regs.h -= 1;
+    fn inc_bc(&mut self) {
+        self.regs.c += 1;
+        if self.regs.c == 0 {
+            self.regs.b += 1;
         }
-        self.regs.l -= 1;
-        val
     }
 
-    // Get HL with post increment
-    fn hl_inc(&mut self) -> uint {
-        let val = ((self.regs.h << 8) & self.regs.l) as uint;
+    fn dec_bc(&mut self) {
+        if self.regs.c == 0 {
+            self.regs.b -= 1;
+        }
+        self.regs.c -= 1;
+    }
+
+    fn direct_addr_bc(&mut self) -> u8 {
+        let bc = self.bc();
+        self.get_byte(bc)
+    }
+
+    fn inc_de(&mut self) {
+        self.regs.e += 1;
+        if self.regs.d == 0 {
+            self.regs.d += 1;
+        }
+    }
+
+    fn dec_de(&mut self) {
+        if self.regs.e == 0 {
+            self.regs.d -= 1;
+        }
+        self.regs.e -= 1;
+    }
+
+    fn direct_addr_de(&mut self) -> u8 {
+        let de = self.de();
+        self.get_byte(de)
+    }
+
+    // Increment HL
+    fn inc_hl(&mut self) {
         self.regs.l += 1;
         if self.regs.l == 0 {
             self.regs.h += 1;
         }
+    }
+
+    // Decrement HL
+    fn dec_hl(&mut self) {
+        if self.regs.l == 0 {
+            self.regs.h -= 1;
+        }
+        self.regs.l -= 1;
+    }
+    
+    fn direct_addr_hl(&mut self) -> u8 {
+        let hl = self.direct_addr_hl();
+        self.get_byte(hl as uint)
+    }
+
+    // Get HL with post decrement
+    fn direct_addr_hl_dec(&mut self) -> u8 {
+        let loc = self.hl();
+        let val = self.get_byte(loc);
+        self.dec_hl();
         val
     }
 
-    // Increment the PC and gets the next byte
+    // Get HL with post increment
+    fn direct_addr_hl_inc(&mut self) -> u8 {
+        let loc = self.hl();
+        let val = self.get_byte(loc);
+        self.inc_hl();
+        val
+    }
+
+    // Increment the PC and get the next byte
     fn next_byte(&mut self) -> u8 {
         self.regs.pc += 1;
         self.mem[self.regs.pc as uint]
+    }
+
+    // Increment the PC twice and get the next two bytes as a short
+    fn next_short(&mut self) -> u16 {
+        let mut short = self.next_byte() as u16;
+        short &= self.next_byte() as u16 << 8;
+        short
     }
 
     // Get byte in memory specified by location
@@ -133,6 +234,9 @@ impl CPU {
     fn get_flag(&self, flag: u8) -> u8 {
         (self.regs.flags & flag != 0) as u8
     }
+
+
+    // Instructions
 
     fn inc_b(&mut self) {
         self.regs.b += 1;
@@ -181,6 +285,14 @@ impl CPU {
         let result = self.regs.accum == 0;
         self.set_flag(ZERO, result);
         self.set_flag(SUBTRACT, false);
+    }
+
+    fn inc_sp(&mut self) {
+        self.regs.sp += 1;
+    }
+
+    fn dec_sp(&mut self) {
+        self.regs.sp -= 1;
     }
 
     fn inc_hl_deref(&mut self) {
@@ -248,6 +360,42 @@ impl CPU {
         self.set_flag(SUBTRACT, true);
     }
 
+    fn jr_not_flag(&mut self, offset: u8, flag: u8) {
+        if self.get_flag(flag) == 0 {
+            self.rel_jmp(offset);
+        }
+    }
+
+    fn jr_flag(&mut self, offset: u8, flag: u8) {
+        if self.get_flag(flag) != 0 {
+            self.rel_jmp(offset);
+        }
+    }
+
+    fn rel_jmp(&mut self, offset: u8) {
+        if offset & 0x80 != 0 {
+            self.regs.pc -= (offset & 0x7F) as u16;
+        } else {
+            self.regs.pc += offset as u16;
+        }
+    }
+
+    fn jp_not_flag(&mut self, address: u16, flag: u8) {
+        if self.get_flag(flag) == 0 {
+            self.abs_jmp(address);
+        }
+    }
+
+    fn jp_flag(&mut self, address: u16, flag: u8) {
+        if self.get_flag(flag) == 0 {
+            self.abs_jmp(address);
+        }
+    }
+
+    fn abs_jmp(&mut self, address: u16) {
+        self.regs.pc = address;
+    }
+
     // Adds a value to the accumulator, setting the carry and zero flags
     // as appropriate. Subtract flag is set to 0 when this is called.
     // TODO: half-carry flag
@@ -258,6 +406,23 @@ impl CPU {
         let result = self.regs.accum;
         self.set_flag(ZERO, result == 0);
         self.set_flag(SUBTRACT, false);
+    }
+
+    // Adds a signed value to the stack pointer, setting carry and half-carry flags
+    // as appropriate. Subtract and zero flags are set to 0 when this is called.
+    fn add_sp(&mut self, val: u8) {
+        let sp = self.regs.sp;
+        let mut carry = false;
+        if val & 0x80 != 0 {
+            self.regs.sp -= (val & 0x7F) as u16;
+            carry = sp < (val & 0x7F) as u16;
+        } else {
+            self.regs.sp += val as u16;
+            carry = sp > 0xFF - val as u16;
+        }
+        self.set_flag(ZERO, false);
+        self.set_flag(SUBTRACT, false);
+        self.set_flag(CARRY, carry);
     }
 
     // Adds a value with carry bit to the accumulator, setting the carry and zero flags
@@ -358,20 +523,19 @@ impl CPU {
             0x21 => { self.regs.l = self.next_byte(); self.regs.h = self.next_byte(); }                                       // LD HL, d16
             0x31 => { self.regs.sp = self.next_byte() as u16; self.regs.sp = (self.next_byte() << 8) as u16 & self.regs.sp; } // LD SP, d16
 
-            0x02 => { let bc = self.bc(); let byte = self.regs.accum; self.set_byte(byte, bc); }     // LD (BC), A
-            0x12 => { let de = self.de(); let byte = self.regs.accum; self.set_byte(byte, de); }     // LD (DE), A
-            0x22 => { let hl = self.hl_inc(); let byte = self.regs.accum; self.set_byte(byte, hl); } // LD (HL+), A
-            0x32 => { let hl = self.hl_dec(); let byte = self.regs.accum; self.set_byte(byte, hl); } // LD (HL-), A
+            0x02 => { let v = self.regs.accum; ld!("(BC)", v, self); }  // LD (BC), A
+            0x12 => { let v = self.regs.accum; ld!("(DE)", v, self); }  // LD (DE), A
+            0x22 => { let v = self.regs.accum; ld!("(HL+)", v, self); } // LD (HL+), A
+            0x32 => { let v = self.regs.accum; ld!("(HL-)", v, self); } // LD (HL-), A
 
-            0x06 => { self.regs.b = self.next_byte(); }                                           // LD B, d8
-            0x16 => { self.regs.d = self.next_byte(); }                                           // LD D, d8
-            0x26 => { self.regs.h = self.next_byte(); }                                           // LD H, d8
-            0x36 => { let byte = self.next_byte(); let hl = self.hl(); self.set_byte(byte, hl); } // LD (HL), d8
+            0x06 => { self.regs.b = self.next_byte(); }                       // LD B, d8
+            0x16 => { self.regs.d = self.next_byte(); }                       // LD D, d8
+            0x26 => { self.regs.h = self.next_byte(); }                       // LD H, d8
+            0x36 => { let byte = self.next_byte(); ld!("(HL)", byte, self); } // LD (HL), d8
 
             0x08 => {                                               // LD (a16), SP
                 let sp = self.regs.sp;
-                let mut loc = self.next_byte() as uint;
-                loc &= (self.next_byte() << 8) as uint;
+                let mut loc = self.next_short() as uint;
                 self.set_byte(sp as u8, loc);
                 loc += 1;
                 self.set_byte((sp >> 8) as u8, loc);
@@ -381,99 +545,90 @@ impl CPU {
             0xE2 => { let loc = 0xFF00 & (self.regs.c as uint); let accum = self.regs.accum; self.set_byte(accum, loc); }      // LD (C), A
             0xF2 => { let loc = 0xFF00 & (self.regs.c as uint); let byte = self.get_byte(loc); self.regs.accum = byte; }       // LD A, (C)
 
-            0xEA => {                                           // LD (a16), A
-                let accum = self.regs.accum;
-                let mut loc = self.next_byte() as uint;
-                loc &= (self.next_byte() << 8) as uint;
-                self.set_byte(accum as u8, loc);
-            }
-            0xFA => {                                           // LD A, (a16)
-                let mut loc = self.next_byte() as uint;
-                loc &= (self.next_byte() << 8) as uint;
-                self.regs.accum = self.get_byte(loc);
-            }
+            0xEA => { let accum = self.regs.accum; let loc = self.next_short() as uint; self.set_byte(accum as u8, loc); } // LD (a16), A
+            0xFA => { let loc = self.next_short() as uint; self.regs.accum = self.get_byte(loc); }                         // LD A, (a16)
 
-            0x0A => { let bc = self.bc(); self.regs.accum = self.get_byte(bc); }     // LD A, (BC)
-            0x1A => { let de = self.de(); self.regs.accum = self.get_byte(de); }     // LD A, (DE)
-            0x2A => { let hl = self.hl_inc(); self.regs.accum = self.get_byte(hl); } // LD A, (HL+)
-            0x3A => { let hl = self.hl_dec(); self.regs.accum = self.get_byte(hl); } // LD A, (HL-)
+            0x0A => { let v = self.direct_addr_bc(); ld!("A", v, self); }     // LD A, (BC)
+            0x1A => { let v = self.direct_addr_de(); ld!("A", v, self); }     // LD A, (DE)
+            0x2A => { let v = self.direct_addr_hl_inc(); ld!("A", v, self); } // LD A, (HL+)
+            0x3A => { let v = self.direct_addr_hl_dec(); ld!("A", v, self); } // LD A, (HL-)
 
-            0x40 => { self.regs.b = self.regs.b; }                           // LD B, B
-            0x41 => { self.regs.b = self.regs.c; }                           // LD B, C
-            0x42 => { self.regs.b = self.regs.d; }                           // LD B, D
-            0x43 => { self.regs.b = self.regs.e; }                           // LD B, E
-            0x44 => { self.regs.b = self.regs.h; }                           // LD B, H
-            0x45 => { self.regs.b = self.regs.l; }                           // LD B, L
-            0x46 => { let hl = self.hl(); self.regs.b = self.get_byte(hl); } // LD B, (HL)
-            0x47 => { self.regs.b = self.regs.accum; }                       // LD B, A
+            0x40 => { let v = self.regs.b; ld!("B", v, self); } // LD B, B
+            0x41 => { let v = self.regs.c; ld!("B", v, self); } // LD B, C
+            0x42 => { let v = self.regs.d; ld!("B", v, self); } // LD B, D
+            0x43 => { let v = self.regs.e; ld!("B", v, self); } // LD B, E
+            0x44 => { let v = self.regs.h; ld!("B", v, self); } // LD B, H
+            0x45 => { let v = self.regs.l; ld!("B", v, self); } // LD B, L
+            0x46 => { let v = self.direct_addr_hl(); ld!("B", v, self); } // LD B, (HL)
+            0x47 => { let v = self.regs.accum; ld!("B", v, self); }                       // LD B, A
 
-            0x48 => { self.regs.c = self.regs.b; }                           // LD C, B
-            0x49 => { self.regs.c = self.regs.c; }                           // LD C, C
-            0x4A => { self.regs.c = self.regs.d; }                           // LD C, D
-            0x4B => { self.regs.c = self.regs.e; }                           // LD C, E
-            0x4C => { self.regs.c = self.regs.h; }                           // LD C, H
-            0x4D => { self.regs.c = self.regs.l; }                           // LD C, L
-            0x4E => { let hl = self.hl(); self.regs.c = self.get_byte(hl); } // LD C, (HL)
-            0x4F => { self.regs.c = self.regs.accum; }                       // LD C, A
+            0x48 => { let v = self.regs.b; ld!("C", v, self); }                           // LD C, B
+            0x49 => { let v = self.regs.c; ld!("C", v, self); }                           // LD C, C
+            0x4A => { let v = self.regs.d; ld!("C", v, self); }                           // LD C, D
+            0x4B => { let v = self.regs.e; ld!("C", v, self); }                           // LD C, E
+            0x4C => { let v = self.regs.h; ld!("C", v, self); }                           // LD C, H
+            0x4D => { let v = self.regs.l; ld!("C", v, self); }                           // LD C, L
+            0x4E => { let v = self.direct_addr_hl(); ld!("C", v, self); } // LD C, (HL)
+            0x4F => { let v = self.regs.accum; ld!("C", v, self); }                       // LD C, A
 
-            0x50 => { self.regs.d = self.regs.b; }                           // LD D, B
-            0x51 => { self.regs.d = self.regs.c; }                           // LD D, C
-            0x52 => { self.regs.d = self.regs.d; }                           // LD D, D
-            0x53 => { self.regs.d = self.regs.e; }                           // LD D, E
-            0x54 => { self.regs.d = self.regs.h; }                           // LD D, H
-            0x55 => { self.regs.d = self.regs.l; }                           // LD D, L
-            0x56 => { let hl = self.hl(); self.regs.d = self.get_byte(hl); } // LD D, (HL)
-            0x57 => { self.regs.d = self.regs.accum; }                       // LD D, A
+            0x50 => { let v = self.regs.b; ld!("D", v, self); }                           // LD D, B
+            0x51 => { let v = self.regs.c; ld!("D", v, self); }                           // LD D, C
+            0x52 => { let v = self.regs.d; ld!("D", v, self); }                           // LD D, D
+            0x53 => { let v = self.regs.e; ld!("D", v, self); }                           // LD D, E
+            0x54 => { let v = self.regs.h; ld!("D", v, self); }                           // LD D, H
+            0x55 => { let v = self.regs.l; ld!("D", v, self); }                           // LD D, L
+            0x56 => { let v = self.direct_addr_hl(); ld!("D", v, self); } // LD D, (HL)
+            0x57 => { let v = self.regs.accum; ld!("D", v, self); }                       // LD D, A
 
-            0x58 => { self.regs.e = self.regs.b; }                           // LD E, B
-            0x59 => { self.regs.e = self.regs.c; }                           // LD E, C
-            0x5A => { self.regs.e = self.regs.d; }                           // LD E, D
-            0x5B => { self.regs.e = self.regs.e; }                           // LD E, E
-            0x5C => { self.regs.e = self.regs.h; }                           // LD E, H
-            0x5D => { self.regs.e = self.regs.l; }                           // LD E, L
-            0x5E => { let hl = self.hl(); self.regs.e = self.get_byte(hl); } // LD E, (HL)
-            0x5F => { self.regs.e = self.regs.accum; }                       // LD E, A
+            0x58 => { let v = self.regs.b; ld!("E", v, self); }           // LD E, B
+            0x59 => { let v = self.regs.c; ld!("E", v, self); }           // LD E, C
+            0x5A => { let v = self.regs.d; ld!("E", v, self); }           // LD E, D
+            0x5B => { let v = self.regs.e; ld!("E", v, self); }           // LD E, E
+            0x5C => { let v = self.regs.h; ld!("E", v, self); }           // LD E, H
+            0x5D => { let v = self.regs.l; ld!("E", v, self); }           // LD E, L
+            0x5E => { let v = self.direct_addr_hl(); ld!("E", v, self); } // LD E, (HL)
+            0x5F => { let v = self.regs.accum; ld!("E", v, self); }       // LD E, A
 
-            0x60 => { self.regs.h = self.regs.b; }                           // LD H, B
-            0x61 => { self.regs.h = self.regs.c; }                           // LD H, C
-            0x62 => { self.regs.h = self.regs.d; }                           // LD H, D
-            0x63 => { self.regs.h = self.regs.e; }                           // LD H, E
-            0x64 => { self.regs.h = self.regs.h; }                           // LD H, H
-            0x65 => { self.regs.h = self.regs.l; }                           // LD H, L
-            0x66 => { let hl = self.hl(); self.regs.h = self.get_byte(hl); } // LD H, (HL)
-            0x67 => { self.regs.h = self.regs.accum; }                       // LD H, A
+            0x60 => { let v = self.regs.b; ld!("H", v, self); }           // LD H, B
+            0x61 => { let v = self.regs.c; ld!("H", v, self); }           // LD H, C
+            0x62 => { let v = self.regs.d; ld!("H", v, self); }           // LD H, D
+            0x63 => { let v = self.regs.e; ld!("H", v, self); }           // LD H, E
+            0x64 => { let v = self.regs.h; ld!("H", v, self); }           // LD H, H
+            0x65 => { let v = self.regs.l; ld!("H", v, self); }           // LD H, L
+            0x66 => { let v = self.direct_addr_hl(); ld!("H", v, self); } // LD H, (HL)
+            0x67 => { let v = self.regs.accum; ld!("H", v, self); }       // LD H, A
 
-            0x68 => { self.regs.l = self.regs.b; }                           // LD L, B
-            0x69 => { self.regs.l = self.regs.c; }                           // LD L, C
-            0x6A => { self.regs.l = self.regs.d; }                           // LD L, D
-            0x6B => { self.regs.l = self.regs.e; }                           // LD L, E
-            0x6C => { self.regs.l = self.regs.h; }                           // LD L, H
-            0x6D => { self.regs.l = self.regs.l; }                           // LD L, L
-            0x6E => { let hl = self.hl(); self.regs.l = self.get_byte(hl); } // LD L, (HL)
-            0x6F => { self.regs.l = self.regs.accum; }                       // LD L, A
+            0x68 => { let v = self.regs.b; ld!("L", v, self); }           // LD L, B
+            0x69 => { let v = self.regs.c; ld!("L", v, self); }           // LD L, C
+            0x6A => { let v = self.regs.d; ld!("L", v, self); }           // LD L, D
+            0x6B => { let v = self.regs.e; ld!("L", v, self); }           // LD L, E
+            0x6C => { let v = self.regs.h; ld!("L", v, self); }           // LD L, H
+            0x6D => { let v = self.regs.l; ld!("L", v, self); }           // LD L, L
+            0x6E => { let v = self.direct_addr_hl(); ld!("L", v, self); } // LD L, (HL)
+            0x6F => { let v = self.regs.accum; ld!("L", v, self); }       // LD L, A
 
-            0x70 => { let hl = self.hl(); let byte = self.regs.b; self.set_byte(byte, hl); } // LD (HL), B
-            0x71 => { let hl = self.hl(); let byte = self.regs.c; self.set_byte(byte, hl); } // LD (HL), C
-            0x72 => { let hl = self.hl(); let byte = self.regs.d; self.set_byte(byte, hl); } // LD (HL), D
-            0x73 => { let hl = self.hl(); let byte = self.regs.e; self.set_byte(byte, hl); } // LD (HL), E
-            0x74 => { let hl = self.hl(); let byte = self.regs.h; self.set_byte(byte, hl); } // LD (HL), H
-            0x75 => { let hl = self.hl(); let byte = self.regs.l; self.set_byte(byte, hl); } // LD (HL), L
+            0x70 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), B
+            0x71 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), C
+            0x72 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), D
+            0x73 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), E
+            0x74 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), H
+            0x75 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), L
+            0x77 => { let v = self.regs.b; ld!("(HL)", v, self); } // LD (HL), A
 
-            0x77 => { let hl = self.hl(); let byte = self.regs.accum; self.set_byte(byte, hl); } // LD (HL), A
-            0x78 => { self.regs.accum = self.regs.b; }                                           // LD A, B
-            0x79 => { self.regs.accum = self.regs.c; }                                           // LD A, C
-            0x7A => { self.regs.accum = self.regs.d; }                                           // LD A, D
-            0x7B => { self.regs.accum = self.regs.e; }                                           // LD A, E
-            0x7C => { self.regs.accum = self.regs.h; }                                           // LD A, H
-            0x7D => { self.regs.accum = self.regs.l; }                                           // LD A, L
-            0x7E => { let hl = self.hl(); self.regs.accum = self.get_byte(hl); }                 // LD A, (HL)
-            0x7F => { self.regs.accum = self.regs.accum; }                                       // LD A, A
+            0x78 => { let v = self.regs.b; ld!("A", v, self); }           // LD A, B
+            0x79 => { let v = self.regs.c; ld!("A", v, self); }           // LD A, C
+            0x7A => { let v = self.regs.d; ld!("A", v, self); }           // LD A, D
+            0x7B => { let v = self.regs.e; ld!("A", v, self); }           // LD A, E
+            0x7C => { let v = self.regs.h; ld!("A", v, self); }           // LD A, H
+            0x7D => { let v = self.regs.l; ld!("A", v, self); }           // LD A, L
+            0x7E => { let v = self.direct_addr_hl(); ld!("A", v, self); } // LD A, (HL)
+            0x7F => { let v = self.regs.accum; ld!("A", v, self); }       // LD A, A
 
             // INC/DEC instructions
-            0x03 => { self.regs.c += 1; if self.regs.c == 0 { self.regs.b += 1; } } // INC BC
-            0x13 => { self.regs.e += 1; if self.regs.e == 0 { self.regs.d += 1; } } // INC DE
-            0x23 => { self.regs.l += 1; if self.regs.l == 0 { self.regs.h += 1; } } // INC HL
-            0x33 => { self.regs.sp += 1; }                                          // INC SP
+            0x03 => { self.inc_bc(); } // INC BC
+            0x13 => { self.inc_de(); } // INC DE
+            0x23 => { self.inc_hl(); } // INC HL
+            0x33 => { self.inc_sp(); } // INC SP
             
             0x04 => { self.inc_b(); }        // INC B
             0x14 => { self.inc_d(); }        // INC D
@@ -485,10 +640,10 @@ impl CPU {
             0x25 => { self.dec_h(); }        // DEC H
             0x35 => { self.dec_hl_deref(); } // DEC (HL)
 
-            0x0B => { self.regs.c -= 1; if self.regs.c == 0 { self.regs.b -= 1 } } // DEC BC
-            0x1B => { self.regs.e -= 1; if self.regs.e == 0 { self.regs.d -= 1 } } // DEC DE
-            0x2B => { self.regs.h -= 1; if self.regs.h == 0 { self.regs.l -= 1 } } // DEC HL
-            0x3B => { self.regs.sp -= 1; }                                         // DEC SP
+            0x0B => { self.dec_bc(); } // DEC BC
+            0x1B => { self.dec_de(); } // DEC DE
+            0x2B => { self.dec_hl(); } // DEC HL
+            0x3B => { self.dec_sp(); } // DEC SP
 
             0x0C => { self.inc_c(); }     // INC C
             0x1C => { self.inc_e(); }     // INC E
@@ -501,26 +656,27 @@ impl CPU {
             0x3D => { self.dec_accum(); } // DEC A
 
             // ADD instructions
-            0x80 => { let val = self.regs.b; self.add_accum(val); }                           // ADD A, B
-            0x81 => { let val = self.regs.c; self.add_accum(val); }                           // ADD A, C
-            0x82 => { let val = self.regs.d; self.add_accum(val); }                           // ADD A, D
-            0x83 => { let val = self.regs.e; self.add_accum(val); }                           // ADD A, E
-            0x84 => { let val = self.regs.h; self.add_accum(val); }                           // ADD A, H
-            0x85 => { let val = self.regs.l; self.add_accum(val); }                           // ADD A, L
-            0x86 => { let hl = self.hl(); let val = self.get_byte(hl); self.add_accum(val); } // ADD A, (HL)
-            0x87 => { let val = self.regs.accum; self.add_accum(val); }                       // ADD A, A
-            0xC6 => { let val = self.next_byte(); self.add_accum(val); }                      // ADD A, d8
+            0x80 => { let val = self.regs.b; self.add_accum(val); }           // ADD A, B
+            0x81 => { let val = self.regs.c; self.add_accum(val); }           // ADD A, C
+            0x82 => { let val = self.regs.d; self.add_accum(val); }           // ADD A, D
+            0x83 => { let val = self.regs.e; self.add_accum(val); }           // ADD A, E
+            0x84 => { let val = self.regs.h; self.add_accum(val); }           // ADD A, H
+            0x85 => { let val = self.regs.l; self.add_accum(val); }           // ADD A, L
+            0x86 => { let val = self.direct_addr_hl(); self.add_accum(val); } // ADD A, (HL)
+            0x87 => { let val = self.regs.accum; self.add_accum(val); }       // ADD A, A
+            0xC6 => { let val = self.next_byte(); self.add_accum(val); }      // ADD A, d8
+            0xE8 => { let val = self.next_byte(); self.add_sp(val); }         // ADD SP, r8
 
             // ADC instructions
-            0x88 => { let val = self.regs.b; self.adc_accum(val); }                           // ADC A, B
-            0x89 => { let val = self.regs.c; self.adc_accum(val); }                           // ADC A, C
-            0x8A => { let val = self.regs.d; self.adc_accum(val); }                           // ADC A, D
-            0x8B => { let val = self.regs.e; self.adc_accum(val); }                           // ADC A, E
-            0x8C => { let val = self.regs.h; self.adc_accum(val); }                           // ADC A, H
-            0x8D => { let val = self.regs.l; self.adc_accum(val); }                           // ADC A, L
-            0x8E => { let hl = self.hl(); let val = self.get_byte(hl); self.adc_accum(val); } // ADC A, (HL)
-            0x8F => { let val = self.regs.accum; self.adc_accum(val); }                       // ADC A, A
-            0xCE => { let val = self.next_byte(); self.adc_accum(val); }                      // ADC A, d8
+            0x88 => { let val = self.regs.b; self.adc_accum(val); }           // ADC A, B
+            0x89 => { let val = self.regs.c; self.adc_accum(val); }           // ADC A, C
+            0x8A => { let val = self.regs.d; self.adc_accum(val); }           // ADC A, D
+            0x8B => { let val = self.regs.e; self.adc_accum(val); }           // ADC A, E
+            0x8C => { let val = self.regs.h; self.adc_accum(val); }           // ADC A, H
+            0x8D => { let val = self.regs.l; self.adc_accum(val); }           // ADC A, L
+            0x8E => { let val = self.direct_addr_hl(); self.adc_accum(val); } // ADC A, (HL)
+            0x8F => { let val = self.regs.accum; self.adc_accum(val); }       // ADC A, A
+            0xCE => { let val = self.next_byte(); self.adc_accum(val); }      // ADC A, d8
             
             // SUB instructions
             0x90 => { let val = self.regs.b; self.sub_accum(val); }                           // SUB A, B
@@ -529,7 +685,7 @@ impl CPU {
             0x93 => { let val = self.regs.e; self.sub_accum(val); }                           // SUB A, E
             0x94 => { let val = self.regs.h; self.sub_accum(val); }                           // SUB A, H
             0x95 => { let val = self.regs.l; self.sub_accum(val); }                           // SUB A, L
-            0x96 => { let hl = self.hl(); let val = self.get_byte(hl); self.sub_accum(val); } // SUB A, (HL)
+            0x96 => { let val = self.direct_addr_hl(); self.sub_accum(val); } // SUB A, (HL)
             0x97 => { let val = self.regs.accum; self.sub_accum(val); }                       // SUB A, A
             0xD6 => { let val = self.next_byte(); self.sub_accum(val); }                      // SUB A, d8
 
@@ -540,7 +696,7 @@ impl CPU {
             0x9B => { let val = self.regs.e; self.sbc_accum(val); }                           // SBC A, E
             0x9C => { let val = self.regs.h; self.sbc_accum(val); }                           // SBC A, H
             0x9D => { let val = self.regs.l; self.sbc_accum(val); }                           // SBC A, L
-            0x9E => { let hl = self.hl(); let val = self.get_byte(hl); self.sbc_accum(val); } // SBC A, (HL)
+            0x9E => { let val = self.direct_addr_hl(); self.sbc_accum(val); } // SBC A, (HL)
             0x9F => { let val = self.regs.accum; self.sbc_accum(val); }                       // SBC A, A
             0xDE => { let val = self.next_byte(); self.sbc_accum(val); }                      // SBC A, d8
 
@@ -551,7 +707,7 @@ impl CPU {
             0xA3 => { let val = self.regs.e; self.and_accum(val); }                           // AND A, E
             0xA4 => { let val = self.regs.h; self.and_accum(val); }                           // AND A, H
             0xA5 => { let val = self.regs.l; self.and_accum(val); }                           // AND A, L
-            0xA6 => { let hl = self.hl(); let val = self.get_byte(hl); self.and_accum(val); } // AND A, (HL)
+            0xA6 => { let val = self.direct_addr_hl(); self.and_accum(val); } // AND A, (HL)
             0xA7 => { let val = self.regs.accum; self.and_accum(val); }                       // AND A, A
             0xE6 => { let val = self.next_byte(); self.and_accum(val); }                      // AND A, d8
 
@@ -562,7 +718,7 @@ impl CPU {
             0xAB => { let val = self.regs.e; self.xor_accum(val); }                           // XOR A, E
             0xAC => { let val = self.regs.h; self.xor_accum(val); }                           // XOR A, H
             0xAD => { let val = self.regs.l; self.xor_accum(val); }                           // XOR A, L
-            0xAE => { let hl = self.hl(); let val = self.get_byte(hl); self.xor_accum(val); } // XOR A, (HL)
+            0xAE => { let val = self.direct_addr_hl(); self.xor_accum(val); } // XOR A, (HL)
             0xAF => { let val = self.regs.accum; self.xor_accum(val); }                       // XOR A, A
             0xEE => { let val = self.next_byte(); self.xor_accum(val); }                      // XOR A, d8
 
@@ -573,7 +729,7 @@ impl CPU {
             0xB3 => { let val = self.regs.e; self.or_accum(val); }                           // OR A, E
             0xB4 => { let val = self.regs.h; self.or_accum(val); }                           // OR A, H
             0xB5 => { let val = self.regs.l; self.or_accum(val); }                           // OR A, L
-            0xB6 => { let hl = self.hl(); let val = self.get_byte(hl); self.or_accum(val); } // OR A, (HL)
+            0xB6 => { let val = self.direct_addr_hl(); self.or_accum(val); } // OR A, (HL)
             0xB7 => { let val = self.regs.accum; self.or_accum(val); }                       // OR A, A
             0xF6 => { let val = self.next_byte(); self.or_accum(val); }                      // OR A, d8
 
@@ -584,11 +740,23 @@ impl CPU {
             0xBB => { let val = self.regs.e; self.cp_accum(val); }                           // CP A, E
             0xBC => { let val = self.regs.h; self.cp_accum(val); }                           // CP A, H
             0xBD => { let val = self.regs.l; self.cp_accum(val); }                           // CP A, L
-            0xBE => { let hl = self.hl(); let val = self.get_byte(hl); self.cp_accum(val); } // CP A, (HL)
+            0xBE => { let val = self.direct_addr_hl(); self.cp_accum(val); } // CP A, (HL)
             0xBF => { let val = self.regs.accum; self.cp_accum(val); }                       // CP A, A
             0xFE => { let val = self.next_byte(); self.cp_accum(val); }                      // CP A, d8
 
-            
+            // JR instructions
+            0x20 => { let offset = self.next_byte(); self.jr_not_flag(offset, ZERO); }  // JR NZ, r8
+            0x30 => { let offset = self.next_byte(); self.jr_not_flag(offset, CARRY); } // JR NC, r8
+            0x18 => { let offset = self.next_byte(); self.rel_jmp(offset); }            // JR r8
+            0x28 => { let offset = self.next_byte(); self.jr_flag(offset, ZERO); }      // JR Z, r8
+            0x38 => { let offset = self.next_byte(); self.jr_flag(offset, CARRY); }     // JR C, r8
+
+            // JP instructions
+            0xC2 => { let address = self.next_short(); self.jp_not_flag(address, ZERO); }  // JP NZ, a16
+            0xD2 => { let address = self.next_short(); self.jp_not_flag(address, CARRY); } // JP NC, a16
+            0xC3 => { let address = self.next_short(); self.abs_jmp(address); }            // JP a16
+            0xCA => { let address = self.next_short(); self.jp_flag(address, ZERO); }      // JP Z, a16
+            0xDA => { let address = self.next_short(); self.jp_flag(address, CARRY); }     // JP C, a16
 
             _ => println!("Opcode not implemented yet.")
         };
