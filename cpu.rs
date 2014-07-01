@@ -561,7 +561,7 @@ impl CPU {
                 self.regs.accum = byte; 
             }
             0xEA => { // LD (a16), A
-                let v = self.regs.accum; 
+                let accum = self.regs.accum; 
                 let loc = self.next_short() as uint; 
                 self.set_byte(accum as u8, loc); 
             }
@@ -575,32 +575,32 @@ impl CPU {
             0x2A => { let v = self.direct_addr_hl_inc(); ld!("A", v, self); } // LD A, (HL+)
             0x3A => { let v = self.direct_addr_hl_dec(); ld!("A", v, self); } // LD A, (HL-)
 
-            0x40 => { let v = self.regs.b; ld!("B", v, self); } // LD B, B
-            0x41 => { let v = self.regs.c; ld!("B", v, self); } // LD B, C
-            0x42 => { let v = self.regs.d; ld!("B", v, self); } // LD B, D
-            0x43 => { let v = self.regs.e; ld!("B", v, self); } // LD B, E
-            0x44 => { let v = self.regs.h; ld!("B", v, self); } // LD B, H
-            0x45 => { let v = self.regs.l; ld!("B", v, self); } // LD B, L
+            0x40 => { let v = self.regs.b; ld!("B", v, self); }           // LD B, B
+            0x41 => { let v = self.regs.c; ld!("B", v, self); }           // LD B, C
+            0x42 => { let v = self.regs.d; ld!("B", v, self); }           // LD B, D
+            0x43 => { let v = self.regs.e; ld!("B", v, self); }           // LD B, E
+            0x44 => { let v = self.regs.h; ld!("B", v, self); }           // LD B, H
+            0x45 => { let v = self.regs.l; ld!("B", v, self); }           // LD B, L
             0x46 => { let v = self.direct_addr_hl(); ld!("B", v, self); } // LD B, (HL)
-            0x47 => { let v = self.regs.accum; ld!("B", v, self); }                       // LD B, A
+            0x47 => { let v = self.regs.accum; ld!("B", v, self); }       // LD B, A
 
-            0x48 => { let v = self.regs.b; ld!("C", v, self); }                           // LD C, B
-            0x49 => { let v = self.regs.c; ld!("C", v, self); }                           // LD C, C
-            0x4A => { let v = self.regs.d; ld!("C", v, self); }                           // LD C, D
-            0x4B => { let v = self.regs.e; ld!("C", v, self); }                           // LD C, E
-            0x4C => { let v = self.regs.h; ld!("C", v, self); }                           // LD C, H
-            0x4D => { let v = self.regs.l; ld!("C", v, self); }                           // LD C, L
+            0x48 => { let v = self.regs.b; ld!("C", v, self); }           // LD C, B
+            0x49 => { let v = self.regs.c; ld!("C", v, self); }           // LD C, C
+            0x4A => { let v = self.regs.d; ld!("C", v, self); }           // LD C, D
+            0x4B => { let v = self.regs.e; ld!("C", v, self); }           // LD C, E
+            0x4C => { let v = self.regs.h; ld!("C", v, self); }           // LD C, H
+            0x4D => { let v = self.regs.l; ld!("C", v, self); }           // LD C, L
             0x4E => { let v = self.direct_addr_hl(); ld!("C", v, self); } // LD C, (HL)
-            0x4F => { let v = self.regs.accum; ld!("C", v, self); }                       // LD C, A
+            0x4F => { let v = self.regs.accum; ld!("C", v, self); }       // LD C, A
 
-            0x50 => { let v = self.regs.b; ld!("D", v, self); }                           // LD D, B
-            0x51 => { let v = self.regs.c; ld!("D", v, self); }                           // LD D, C
-            0x52 => { let v = self.regs.d; ld!("D", v, self); }                           // LD D, D
-            0x53 => { let v = self.regs.e; ld!("D", v, self); }                           // LD D, E
-            0x54 => { let v = self.regs.h; ld!("D", v, self); }                           // LD D, H
-            0x55 => { let v = self.regs.l; ld!("D", v, self); }                           // LD D, L
+            0x50 => { let v = self.regs.b; ld!("D", v, self); }           // LD D, B
+            0x51 => { let v = self.regs.c; ld!("D", v, self); }           // LD D, C
+            0x52 => { let v = self.regs.d; ld!("D", v, self); }           // LD D, D
+            0x53 => { let v = self.regs.e; ld!("D", v, self); }           // LD D, E
+            0x54 => { let v = self.regs.h; ld!("D", v, self); }           // LD D, H
+            0x55 => { let v = self.regs.l; ld!("D", v, self); }           // LD D, L
             0x56 => { let v = self.direct_addr_hl(); ld!("D", v, self); } // LD D, (HL)
-            0x57 => { let v = self.regs.accum; ld!("D", v, self); }                       // LD D, A
+            0x57 => { let v = self.regs.accum; ld!("D", v, self); }       // LD D, A
 
             0x58 => { let v = self.regs.b; ld!("E", v, self); }           // LD E, B
             0x59 => { let v = self.regs.c; ld!("E", v, self); }           // LD E, C
@@ -701,70 +701,70 @@ impl CPU {
             0xCE => { let val = self.next_byte(); self.adc_accum(val); }      // ADC A, d8
             
             // SUB instructions
-            0x90 => { let val = self.regs.b; self.sub_accum(val); }                           // SUB A, B
-            0x91 => { let val = self.regs.c; self.sub_accum(val); }                           // SUB A, C
-            0x92 => { let val = self.regs.d; self.sub_accum(val); }                           // SUB A, D
-            0x93 => { let val = self.regs.e; self.sub_accum(val); }                           // SUB A, E
-            0x94 => { let val = self.regs.h; self.sub_accum(val); }                           // SUB A, H
-            0x95 => { let val = self.regs.l; self.sub_accum(val); }                           // SUB A, L
+            0x90 => { let val = self.regs.b; self.sub_accum(val); }           // SUB A, B
+            0x91 => { let val = self.regs.c; self.sub_accum(val); }           // SUB A, C
+            0x92 => { let val = self.regs.d; self.sub_accum(val); }           // SUB A, D
+            0x93 => { let val = self.regs.e; self.sub_accum(val); }           // SUB A, E
+            0x94 => { let val = self.regs.h; self.sub_accum(val); }           // SUB A, H
+            0x95 => { let val = self.regs.l; self.sub_accum(val); }           // SUB A, L
             0x96 => { let val = self.direct_addr_hl(); self.sub_accum(val); } // SUB A, (HL)
-            0x97 => { let val = self.regs.accum; self.sub_accum(val); }                       // SUB A, A
-            0xD6 => { let val = self.next_byte(); self.sub_accum(val); }                      // SUB A, d8
+            0x97 => { let val = self.regs.accum; self.sub_accum(val); }       // SUB A, A
+            0xD6 => { let val = self.next_byte(); self.sub_accum(val); }      // SUB A, d8
 
             // SBC instructions
-            0x98 => { let val = self.regs.b; self.sbc_accum(val); }                           // SBC A, B
-            0x99 => { let val = self.regs.c; self.sbc_accum(val); }                           // SBC A, C
-            0x9A => { let val = self.regs.d; self.sbc_accum(val); }                           // SBC A, D
-            0x9B => { let val = self.regs.e; self.sbc_accum(val); }                           // SBC A, E
-            0x9C => { let val = self.regs.h; self.sbc_accum(val); }                           // SBC A, H
-            0x9D => { let val = self.regs.l; self.sbc_accum(val); }                           // SBC A, L
+            0x98 => { let val = self.regs.b; self.sbc_accum(val); }           // SBC A, B
+            0x99 => { let val = self.regs.c; self.sbc_accum(val); }           // SBC A, C
+            0x9A => { let val = self.regs.d; self.sbc_accum(val); }           // SBC A, D
+            0x9B => { let val = self.regs.e; self.sbc_accum(val); }           // SBC A, E
+            0x9C => { let val = self.regs.h; self.sbc_accum(val); }           // SBC A, H
+            0x9D => { let val = self.regs.l; self.sbc_accum(val); }           // SBC A, L
             0x9E => { let val = self.direct_addr_hl(); self.sbc_accum(val); } // SBC A, (HL)
-            0x9F => { let val = self.regs.accum; self.sbc_accum(val); }                       // SBC A, A
-            0xDE => { let val = self.next_byte(); self.sbc_accum(val); }                      // SBC A, d8
+            0x9F => { let val = self.regs.accum; self.sbc_accum(val); }       // SBC A, A
+            0xDE => { let val = self.next_byte(); self.sbc_accum(val); }      // SBC A, d8
 
             // AND instructions
-            0xA0 => { let val = self.regs.b; self.and_accum(val); }                           // AND A, B
-            0xA1 => { let val = self.regs.c; self.and_accum(val); }                           // AND A, C
-            0xA2 => { let val = self.regs.d; self.and_accum(val); }                           // AND A, D
-            0xA3 => { let val = self.regs.e; self.and_accum(val); }                           // AND A, E
-            0xA4 => { let val = self.regs.h; self.and_accum(val); }                           // AND A, H
-            0xA5 => { let val = self.regs.l; self.and_accum(val); }                           // AND A, L
+            0xA0 => { let val = self.regs.b; self.and_accum(val); }           // AND A, B
+            0xA1 => { let val = self.regs.c; self.and_accum(val); }           // AND A, C
+            0xA2 => { let val = self.regs.d; self.and_accum(val); }           // AND A, D
+            0xA3 => { let val = self.regs.e; self.and_accum(val); }           // AND A, E
+            0xA4 => { let val = self.regs.h; self.and_accum(val); }           // AND A, H
+            0xA5 => { let val = self.regs.l; self.and_accum(val); }           // AND A, L
             0xA6 => { let val = self.direct_addr_hl(); self.and_accum(val); } // AND A, (HL)
-            0xA7 => { let val = self.regs.accum; self.and_accum(val); }                       // AND A, A
-            0xE6 => { let val = self.next_byte(); self.and_accum(val); }                      // AND A, d8
+            0xA7 => { let val = self.regs.accum; self.and_accum(val); }       // AND A, A
+            0xE6 => { let val = self.next_byte(); self.and_accum(val); }      // AND A, d8
 
             // XOR instructions
-            0xA8 => { let val = self.regs.b; self.xor_accum(val); }                           // XOR A, B
-            0xA9 => { let val = self.regs.c; self.xor_accum(val); }                           // XOR A, C
-            0xAA => { let val = self.regs.d; self.xor_accum(val); }                           // XOR A, D
-            0xAB => { let val = self.regs.e; self.xor_accum(val); }                           // XOR A, E
-            0xAC => { let val = self.regs.h; self.xor_accum(val); }                           // XOR A, H
-            0xAD => { let val = self.regs.l; self.xor_accum(val); }                           // XOR A, L
+            0xA8 => { let val = self.regs.b; self.xor_accum(val); }           // XOR A, B
+            0xA9 => { let val = self.regs.c; self.xor_accum(val); }           // XOR A, C
+            0xAA => { let val = self.regs.d; self.xor_accum(val); }           // XOR A, D
+            0xAB => { let val = self.regs.e; self.xor_accum(val); }           // XOR A, E
+            0xAC => { let val = self.regs.h; self.xor_accum(val); }           // XOR A, H
+            0xAD => { let val = self.regs.l; self.xor_accum(val); }           // XOR A, L
             0xAE => { let val = self.direct_addr_hl(); self.xor_accum(val); } // XOR A, (HL)
-            0xAF => { let val = self.regs.accum; self.xor_accum(val); }                       // XOR A, A
-            0xEE => { let val = self.next_byte(); self.xor_accum(val); }                      // XOR A, d8
+            0xAF => { let val = self.regs.accum; self.xor_accum(val); }       // XOR A, A
+            0xEE => { let val = self.next_byte(); self.xor_accum(val); }      // XOR A, d8
 
             // OR instructions
-            0xB0 => { let val = self.regs.b; self.or_accum(val); }                           // OR A, B
-            0xB1 => { let val = self.regs.c; self.or_accum(val); }                           // OR A, C
-            0xB2 => { let val = self.regs.d; self.or_accum(val); }                           // OR A, D
-            0xB3 => { let val = self.regs.e; self.or_accum(val); }                           // OR A, E
-            0xB4 => { let val = self.regs.h; self.or_accum(val); }                           // OR A, H
-            0xB5 => { let val = self.regs.l; self.or_accum(val); }                           // OR A, L
+            0xB0 => { let val = self.regs.b; self.or_accum(val); }           // OR A, B
+            0xB1 => { let val = self.regs.c; self.or_accum(val); }           // OR A, C
+            0xB2 => { let val = self.regs.d; self.or_accum(val); }           // OR A, D
+            0xB3 => { let val = self.regs.e; self.or_accum(val); }           // OR A, E
+            0xB4 => { let val = self.regs.h; self.or_accum(val); }           // OR A, H
+            0xB5 => { let val = self.regs.l; self.or_accum(val); }           // OR A, L
             0xB6 => { let val = self.direct_addr_hl(); self.or_accum(val); } // OR A, (HL)
-            0xB7 => { let val = self.regs.accum; self.or_accum(val); }                       // OR A, A
-            0xF6 => { let val = self.next_byte(); self.or_accum(val); }                      // OR A, d8
+            0xB7 => { let val = self.regs.accum; self.or_accum(val); }       // OR A, A
+            0xF6 => { let val = self.next_byte(); self.or_accum(val); }      // OR A, d8
 
             // CP instructions
-            0xB8 => { let val = self.regs.b; self.cp_accum(val); }                           // CP A, B
-            0xB9 => { let val = self.regs.c; self.cp_accum(val); }                           // CP A, C
-            0xBA => { let val = self.regs.d; self.cp_accum(val); }                           // CP A, D
-            0xBB => { let val = self.regs.e; self.cp_accum(val); }                           // CP A, E
-            0xBC => { let val = self.regs.h; self.cp_accum(val); }                           // CP A, H
-            0xBD => { let val = self.regs.l; self.cp_accum(val); }                           // CP A, L
+            0xB8 => { let val = self.regs.b; self.cp_accum(val); }           // CP A, B
+            0xB9 => { let val = self.regs.c; self.cp_accum(val); }           // CP A, C
+            0xBA => { let val = self.regs.d; self.cp_accum(val); }           // CP A, D
+            0xBB => { let val = self.regs.e; self.cp_accum(val); }           // CP A, E
+            0xBC => { let val = self.regs.h; self.cp_accum(val); }           // CP A, H
+            0xBD => { let val = self.regs.l; self.cp_accum(val); }           // CP A, L
             0xBE => { let val = self.direct_addr_hl(); self.cp_accum(val); } // CP A, (HL)
-            0xBF => { let val = self.regs.accum; self.cp_accum(val); }                       // CP A, A
-            0xFE => { let val = self.next_byte(); self.cp_accum(val); }                      // CP A, d8
+            0xBF => { let val = self.regs.accum; self.cp_accum(val); }       // CP A, A
+            0xFE => { let val = self.next_byte(); self.cp_accum(val); }      // CP A, d8
 
             // JR instructions
             0x20 => { let offset = self.next_byte(); self.jr_not_flag(offset, ZERO); }  // JR NZ, r8
