@@ -518,10 +518,10 @@ impl CPU {
             0x00 => println!("bork"),
 
             // LD operations
-            0x01 => { self.regs.c = self.next_byte(); self.regs.b = self.next_byte(); }                                       // LD BC, d16
-            0x11 => { self.regs.e = self.next_byte(); self.regs.d = self.next_byte(); }                                       // LD DE, d16
-            0x21 => { self.regs.l = self.next_byte(); self.regs.h = self.next_byte(); }                                       // LD HL, d16
-            0x31 => { self.regs.sp = self.next_byte() as u16; self.regs.sp = (self.next_byte() << 8) as u16 & self.regs.sp; } // LD SP, d16
+            0x01 => { self.regs.c = self.next_byte(); self.regs.b = self.next_byte(); } // LD BC, d16
+            0x11 => { self.regs.e = self.next_byte(); self.regs.d = self.next_byte(); } // LD DE, d16
+            0x21 => { self.regs.l = self.next_byte(); self.regs.h = self.next_byte(); } // LD HL, d16
+            0x31 => { self.regs.sp = self.next_short(); }                               // LD SP, d16
 
             0x02 => { let v = self.regs.accum; ld!("(BC)", v, self); }  // LD (BC), A
             0x12 => { let v = self.regs.accum; ld!("(DE)", v, self); }  // LD (DE), A
@@ -533,20 +533,42 @@ impl CPU {
             0x26 => { self.regs.h = self.next_byte(); }                       // LD H, d8
             0x36 => { let byte = self.next_byte(); ld!("(HL)", byte, self); } // LD (HL), d8
 
-            0x08 => {                                               // LD (a16), SP
+            0x08 => { // LD (a16), SP
                 let sp = self.regs.sp;
                 let mut loc = self.next_short() as uint;
                 self.set_byte(sp as u8, loc);
                 loc += 1;
                 self.set_byte((sp >> 8) as u8, loc);
             }
-            0xE0 => { let loc = 0xFF00 & (self.next_byte() as uint); let accum = self.regs.accum; self.set_byte(accum, loc); } // LD ($FF00 + a8), A
-            0xF0 => { let loc = 0xFF00 & (self.next_byte() as uint); let byte = self.get_byte(loc); self.regs.accum = byte; }  // LD A, ($FF00 + a8)
-            0xE2 => { let loc = 0xFF00 & (self.regs.c as uint); let accum = self.regs.accum; self.set_byte(accum, loc); }      // LD (C), A
-            0xF2 => { let loc = 0xFF00 & (self.regs.c as uint); let byte = self.get_byte(loc); self.regs.accum = byte; }       // LD A, (C)
-
-            0xEA => { let accum = self.regs.accum; let loc = self.next_short() as uint; self.set_byte(accum as u8, loc); } // LD (a16), A
-            0xFA => { let loc = self.next_short() as uint; self.regs.accum = self.get_byte(loc); }                         // LD A, (a16)
+            0xE0 => { // LD ($FF00 + a8), A
+                let loc = 0xFF00 & (self.next_byte() as uint); 
+                let accum = self.regs.accum; 
+                self.set_byte(accum, loc); 
+            }
+            0xF0 => { // LD A, ($FF00 + a8) 
+                let loc = 0xFF00 & (self.next_byte() as uint); 
+                let byte = self.get_byte(loc); 
+                self.regs.accum = byte; 
+            } 
+            0xE2 => { // LD (C), A
+                let loc = 0xFF00 & (self.regs.c as uint); 
+                let accum = self.regs.accum; 
+                self.set_byte(accum, loc); 
+            }
+            0xF2 => { // LD A, (C)
+                let loc = 0xFF00 & (self.regs.c as uint); 
+                let byte = self.get_byte(loc); 
+                self.regs.accum = byte; 
+            }
+            0xEA => { // LD (a16), A
+                let v = self.regs.accum; 
+                let loc = self.next_short() as uint; 
+                self.set_byte(accum as u8, loc); 
+            }
+            0xFA => { // LD A, (a16)
+                let loc = self.next_short() as uint; 
+                self.regs.accum = self.get_byte(loc); 
+            }
 
             0x0A => { let v = self.direct_addr_bc(); ld!("A", v, self); }     // LD A, (BC)
             0x1A => { let v = self.direct_addr_de(); ld!("A", v, self); }     // LD A, (DE)
