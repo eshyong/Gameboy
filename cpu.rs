@@ -70,8 +70,9 @@ macro_rules! ld {
                 $cpu.set_byte($val, hl);
                 $cpu.inc_hl();
             }
-            _ => println!("don't recognize that register"),
+            _ => {}
         };
+
     };
 }
 
@@ -109,19 +110,24 @@ impl CPU {
         println!("pc: {}", self.regs.pc);
     }
 
-    // Get BC as a 16 bit value
-    fn bc (&mut self) -> uint {
+    // Get BC as an unsigned integer
+    fn bc(&mut self) -> uint {
         ((self.regs.b << 8) & self.regs.c) as uint
     }
 
-    // Get DE as a 16 bit value
+    // Get DE as an unsigned integer
     fn de(&mut self) -> uint {
         ((self.regs.d << 8) & self.regs.e) as uint
     }
 
-    // Get HL as a 16 bit value
+    // Get HL as an unsigned integer
     fn hl(&mut self) -> uint {
         ((self.regs.h << 8) & self.regs.l) as uint
+    }
+    
+    // Get AF (accumulator flags) as an unsigned integer
+    fn af(&mut self) -> uint {
+        ((self.regs.accum << 8) & self.regs.flags) as uint
     }
 
     fn inc_bc(&mut self) {
@@ -231,8 +237,8 @@ impl CPU {
         }
     }
 
-    fn get_flag(&self, flag: u8) -> u8 {
-        (self.regs.flags & flag != 0) as u8
+    fn get_flag(&self, flag: u8) -> bool {
+        self.regs.flags & flag != 0
     }
 
 
@@ -361,13 +367,13 @@ impl CPU {
     }
 
     fn jr_not_flag(&mut self, offset: u8, flag: u8) {
-        if self.get_flag(flag) == 0 {
+        if !self.get_flag(flag) {
             self.rel_jmp(offset);
         }
     }
 
     fn jr_flag(&mut self, offset: u8, flag: u8) {
-        if self.get_flag(flag) != 0 {
+        if self.get_flag(flag) {
             self.rel_jmp(offset);
         }
     }
@@ -381,19 +387,85 @@ impl CPU {
     }
 
     fn jp_not_flag(&mut self, address: u16, flag: u8) {
-        if self.get_flag(flag) == 0 {
+        if !self.get_flag(flag) {
             self.abs_jmp(address);
         }
     }
 
     fn jp_flag(&mut self, address: u16, flag: u8) {
-        if self.get_flag(flag) == 0 {
+        if self.get_flag(flag) {
             self.abs_jmp(address);
         }
     }
 
     fn abs_jmp(&mut self, address: u16) {
         self.regs.pc = address;
+    }
+
+    fn ret_not_flag(&mut self, flag: u8) {
+        if !self.get_flag(flag) {
+            self.ret();
+        }
+    }
+
+    fn ret_flag(&mut self, flag: u8) {
+        if self.get_flag(flag) {
+            self.ret();
+        }
+    }
+
+    fn ret(&mut self) {
+        self.regs.pc = self.regs.sp;
+        self.regs.sp += 2;
+    }
+
+    fn reti(&mut self) {
+        self.ret();
+        self.ei();
+    }
+
+    fn call_not_flag(&mut self, address: u16, flag: u8) {
+        if !self.get_flag(flag) {
+            self.call(address);
+        }
+    }
+
+    fn call_flag(&mut self, address: u16, flag: u8) {
+        if self.get_flag(flag) {
+            self.call(address);
+        }
+    }
+
+    fn call(&mut self, address: u16) {
+        self.regs.sp -= 2;
+        self.regs.sp = self.regs.pc;
+        self.regs.pc = address;
+    }
+
+    fn push(&mut self, address: u16) {
+        self.regs.sp -= 2;
+        self.regs.sp = address;
+    }
+
+    fn pop(&mut self, registers: &'static str) {
+        let sp = self.regs.sp;
+        match registers {
+            "BC" => { self.regs.b = (sp >> 8) as u8; self.regs.c = sp as u8; }
+            "DE" => { self.regs.d = (sp >> 8) as u8; self.regs.e = sp as u8; }
+            "HL" => { self.regs.h = (sp >> 8) as u8; self.regs.l = sp as u8; }
+            "AF" => { self.regs.accum = (sp >> 8) as u8; self.regs.flags = sp as u8; }
+            _ => println!("pop instruction not recognized: {}", registers),
+        }
+    }
+
+    // Enable interrupts
+    fn ei(&mut self) {
+        
+    }
+
+    // Disable interrupts
+    fn di(&mut self) {
+
     }
 
     // Adds a value to the accumulator, setting the carry and zero flags
@@ -430,7 +502,7 @@ impl CPU {
     // TODO: half-carry flag
     fn adc_accum(&mut self, val: u8) {
         let accum = self.regs.accum;
-        let carry = self.get_flag(CARRY);
+        let carry = self.get_flag(CARRY) as u8;
         self.set_flag(CARRY, (accum + carry > 0xFF - val) || (val + carry > 0xFF - accum));
         self.regs.accum += val + carry;
         let result = self.regs.accum;
@@ -455,7 +527,7 @@ impl CPU {
     // TODO: half-carry flag
     fn sbc_accum(&mut self, val: u8) {
         let accum = self.regs.accum;
-        let carry = self.get_flag(CARRY);
+        let carry = self.get_flag(CARRY) as u8;
         self.set_flag(CARRY, accum < val + carry);
         self.regs.accum -= val + carry;
         let result = self.regs.accum;
@@ -515,7 +587,7 @@ impl CPU {
     fn decode_op(&mut self, op: u8) {
         match op {
             // NOP
-            0x00 => println!("bork"),
+            0x00 => {}
 
             // LD operations
             0x01 => { self.regs.c = self.next_byte(); self.regs.b = self.next_byte(); } // LD BC, d16
@@ -779,6 +851,36 @@ impl CPU {
             0xC3 => { let address = self.next_short(); self.abs_jmp(address); }            // JP a16
             0xCA => { let address = self.next_short(); self.jp_flag(address, ZERO); }      // JP Z, a16
             0xDA => { let address = self.next_short(); self.jp_flag(address, CARRY); }     // JP C, a16
+
+            // RET instructions
+            0xC0 => { self.ret_not_flag(ZERO); }  // RET NZ
+            0xD0 => { self.ret_not_flag(CARRY); } // RET NC
+            0xC8 => { self.ret_flag(ZERO); }      // RET Z
+            0xD8 => { self.ret_flag(CARRY); }     // RET C
+            0xC9 => { self.ret(); }               // RET
+            0xD9 => { self.reti(); }              // RETI
+
+            0xC4 => { let address = self.next_short(); self.call_not_flag(address, ZERO); }  // CALL NZ, a16
+            0xD4 => { let address = self.next_short(); self.call_not_flag(address, CARRY); } // CALL NC, a16
+            0xCC => { let address = self.next_short(); self.call_flag(address, ZERO); }      // CALL Z, a16
+            0xDC => { let address = self.next_short(); self.call_flag(address, CARRY); }     // CALL C, a16
+            0xCD => { let address = self.next_short(); self.call(address); }                 // CALL a16
+
+            // POP instructions
+            0xC1 => { self.pop("BC"); } // POP BC
+            0xD1 => { self.pop("DE"); } // POP DE
+            0xE1 => { self.pop("HL"); } // POP HL
+            0xF1 => { self.pop("AF"); } // POP AF
+
+            // PUSH instructions
+            0xC5 => { let bc = self.bc() as u16; self.push(bc); } // PUSH BC
+            0xD5 => { let de = self.de() as u16; self.push(de); } // PUSH DE
+            0xE5 => { let hl = self.hl() as u16; self.push(hl); } // PUSH HL
+            0xF5 => { let af = self.af() as u16; self.push(af); } // PUSH AF
+            
+            // EI/DI instructions (interrupts)
+            0xF3 => { self.di(); } // DI
+            0xFB => { self.ei(); } // EI
 
             _ => println!("Opcode not implemented yet.")
         };
