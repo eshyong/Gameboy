@@ -63,12 +63,12 @@ macro_rules! ld {
             "(HL+)" => {
                 let hl = $cpu.hl();
                 $cpu.set_byte($val, hl);
-                $cpu.inc_hl();
+                $cpu.inc("HL");
             }
             "(HL-)" => {
                 let hl = $cpu.hl();
                 $cpu.set_byte($val, hl);
-                $cpu.inc_hl();
+                $cpu.dec("HL");
             }
             _ => {}
         };
@@ -130,58 +130,14 @@ impl CPU {
         ((self.regs.accum << 8) & self.regs.flags) as uint
     }
 
-    fn inc_bc(&mut self) {
-        self.regs.c += 1;
-        if self.regs.c == 0 {
-            self.regs.b += 1;
-        }
-    }
-
-    fn dec_bc(&mut self) {
-        if self.regs.c == 0 {
-            self.regs.b -= 1;
-        }
-        self.regs.c -= 1;
-    }
-
     fn direct_addr_bc(&mut self) -> u8 {
         let bc = self.bc();
         self.get_byte(bc)
     }
 
-    fn inc_de(&mut self) {
-        self.regs.e += 1;
-        if self.regs.d == 0 {
-            self.regs.d += 1;
-        }
-    }
-
-    fn dec_de(&mut self) {
-        if self.regs.e == 0 {
-            self.regs.d -= 1;
-        }
-        self.regs.e -= 1;
-    }
-
     fn direct_addr_de(&mut self) -> u8 {
         let de = self.de();
         self.get_byte(de)
-    }
-
-    // Increment HL
-    fn inc_hl(&mut self) {
-        self.regs.l += 1;
-        if self.regs.l == 0 {
-            self.regs.h += 1;
-        }
-    }
-
-    // Decrement HL
-    fn dec_hl(&mut self) {
-        if self.regs.l == 0 {
-            self.regs.h -= 1;
-        }
-        self.regs.l -= 1;
     }
     
     fn direct_addr_hl(&mut self) -> u8 {
@@ -193,7 +149,7 @@ impl CPU {
     fn direct_addr_hl_dec(&mut self) -> u8 {
         let loc = self.hl();
         let val = self.get_byte(loc);
-        self.dec_hl();
+        self.dec("HL");
         val
     }
 
@@ -201,7 +157,7 @@ impl CPU {
     fn direct_addr_hl_inc(&mut self) -> u8 {
         let loc = self.hl();
         let val = self.get_byte(loc);
-        self.inc_hl();
+        self.inc("HL");
         val
     }
 
@@ -244,126 +200,68 @@ impl CPU {
 
     // Instructions
 
-    fn inc_b(&mut self) {
-        self.regs.b += 1;
-        let result = self.regs.b == 0;
+    fn inc(&mut self, register: &'static str) {
+        let mut result = false;
+        match register {
+            "A" => { self.regs.accum += 1; result = self.regs.accum == 0; }
+            "B" => { self.regs.b += 1; result = self.regs.b == 0; }
+            "C" => { self.regs.c += 1; result = self.regs.c == 0; }
+            "D" => { self.regs.d += 1; result = self.regs.d == 0; }
+            "E" => { self.regs.e += 1; result = self.regs.e == 0; }
+            "H" => { self.regs.h += 1; result = self.regs.h == 0; }
+            "L" => { self.regs.l += 1; result = self.regs.l == 0; }
+            "(HL)" => {
+                let hl = self.hl();
+                let val = self.get_byte(hl) + 1;
+                self.set_byte(val, hl);
+                result = self.get_byte(hl) == 0;
+            }
+            _   => {}
+        };
         self.set_flag(ZERO, result);
         self.set_flag(SUBTRACT, false);
     }
 
-    fn inc_c(&mut self) {
-        self.regs.c += 1;
-        let result = self.regs.c == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn inc_d(&mut self) {
-        self.regs.d += 1;
-        let result = self.regs.d == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn inc_e(&mut self) {
-        self.regs.e += 1;
-        let result = self.regs.e == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn inc_h(&mut self) {
-        self.regs.h += 1;
-        let result = self.regs.h == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn inc_l(&mut self) {
-        self.regs.l += 1;
-        let result = self.regs.l == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn inc_accum(&mut self) {
-        self.regs.accum += 1;
-        let result = self.regs.accum == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn inc_sp(&mut self) {
-        self.regs.sp += 1;
-    }
-
-    fn dec_sp(&mut self) {
-        self.regs.sp -= 1;
-    }
-
-    fn inc_hl_deref(&mut self) {
-        let hl = self.hl();
-        let byte = self.get_byte(hl) + 1;
-        self.set_byte(byte, hl);
-        self.set_flag(ZERO, byte == 0);
-        self.set_flag(SUBTRACT, false);
-    }
-
-    fn dec_b(&mut self) {
-        self.regs.b -= 1;
-        let result = self.regs.b == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, true);
-    }
-
-    fn dec_c(&mut self) {
-        self.regs.c -= 1;
-        let result = self.regs.c == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, true);
-    }
-
-    fn dec_d(&mut self) {
-        self.regs.d -= 1;
-        let result = self.regs.d == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, true);
-    }
-
-    fn dec_e(&mut self) {
-        self.regs.e -= 1;
-        let result = self.regs.e == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, true);
-    }
-
-    fn dec_h(&mut self) {
-        self.regs.h -= 1;
-        let result = self.regs.h == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, true);
-    }
-
-    fn dec_l(&mut self) {
-        self.regs.l -= 1;
-        let result = self.regs.l == 0;
-        self.set_flag(ZERO, result);
-        self.set_flag(SUBTRACT, true);
+    fn inc16(&mut self, registers: &'static str) {
+        match registers {
+            "BC" => { self.regs.c += 1; if self.regs.c == 0 { self.regs.b += 1; } }
+            "DE" => { self.regs.e += 1; if self.regs.e == 0 { self.regs.d += 1; } }
+            "HL" => { self.regs.l += 1; if self.regs.l == 0 { self.regs.h += 1; } }
+            "SP" => { self.regs.sp += 1; }
+            _    => {}
+        };
     }
     
-    fn dec_accum(&mut self) {
-        self.regs.accum -= 1;
-        let result = self.regs.accum == 0;
+    fn dec(&mut self, register: &'static str) {
+        let mut result = false;
+        match register {
+            "A"    => { self.regs.accum -= 1; result = self.regs.accum == 0; }
+            "B"    => { self.regs.b -= 1; result = self.regs.b == 0; }
+            "C"    => { self.regs.c -= 1; result = self.regs.c == 0; }
+            "D"    => { self.regs.d -= 1; result = self.regs.d == 0; }
+            "E"    => { self.regs.e -= 1; result = self.regs.e == 0; }
+            "H"    => { self.regs.h -= 1; result = self.regs.h == 0; }
+            "L"    => { self.regs.l -= 1; result = self.regs.l == 0; }
+            "(HL)" => {
+                let hl = self.hl();
+                let val = self.get_byte(hl) - 1;
+                self.set_byte(val, hl);
+                result = self.get_byte(hl) == 0;
+            }
+            _      => {}
+        };
         self.set_flag(ZERO, result);
         self.set_flag(SUBTRACT, true);
     }
 
-    fn dec_hl_deref(&mut self) {
-        let hl = self.hl();
-        let byte = self.get_byte(hl) - 1;
-        self.set_byte(byte, hl);
-        self.set_flag(ZERO, byte == 0);
-        self.set_flag(SUBTRACT, true);
+    fn dec16(&mut self, registers: &'static str) {
+        match registers {
+            "BC" => { if self.regs.c == 0 { self.regs.b -= 1; } self.regs.c -= 1; }
+            "DE" => { if self.regs.e == 0 { self.regs.d -= 1; } self.regs.e -= 1; }
+            "HL" => { if self.regs.l == 0 { self.regs.h -= 1; } self.regs.l -= 1; }
+            "SP" => { self.regs.sp -= 1; }
+            _    => {}
+        };
     }
 
     fn jr_not_flag(&mut self, offset: u8, flag: u8) {
@@ -719,35 +617,35 @@ impl CPU {
             0x7F => { let v = self.regs.accum; ld!("A", v, self); }       // LD A, A
 
             // INC/DEC instructions
-            0x03 => { self.inc_bc(); } // INC BC
-            0x13 => { self.inc_de(); } // INC DE
-            0x23 => { self.inc_hl(); } // INC HL
-            0x33 => { self.inc_sp(); } // INC SP
+            0x03 => { self.inc16("BC"); } // INC BC
+            0x13 => { self.inc16("DE"); } // INC DE
+            0x23 => { self.inc16("HL"); } // INC HL
+            0x33 => { self.inc16("SP"); } // INC SP
             
-            0x04 => { self.inc_b(); }        // INC B
-            0x14 => { self.inc_d(); }        // INC D
-            0x24 => { self.inc_h(); }        // INC H
-            0x34 => { self.inc_hl_deref(); } // INC (HL)
+            0x04 => { self.inc("B"); }        // INC B
+            0x14 => { self.inc("D"); }        // INC D
+            0x24 => { self.inc("H"); }        // INC H
+            0x34 => { self.inc("(HL)"); } // INC (HL)
 
-            0x05 => { self.dec_b(); }        // DEC B
-            0x15 => { self.dec_d(); }        // DEC D
-            0x25 => { self.dec_h(); }        // DEC H
-            0x35 => { self.dec_hl_deref(); } // DEC (HL)
+            0x05 => { self.dec("B"); }        // DEC B
+            0x15 => { self.dec("D"); }        // DEC D
+            0x25 => { self.dec("H"); }        // DEC H
+            0x35 => { self.dec("(HL)"); } // DEC (HL)
 
-            0x0B => { self.dec_bc(); } // DEC BC
-            0x1B => { self.dec_de(); } // DEC DE
-            0x2B => { self.dec_hl(); } // DEC HL
-            0x3B => { self.dec_sp(); } // DEC SP
+            0x0B => { self.dec16("BC"); } // DEC BC
+            0x1B => { self.dec16("DE"); } // DEC DE
+            0x2B => { self.dec16("HL"); } // DEC HL
+            0x3B => { self.dec16("SP"); } // DEC SP
 
-            0x0C => { self.inc_c(); }     // INC C
-            0x1C => { self.inc_e(); }     // INC E
-            0x2C => { self.inc_l(); }     // INC L
-            0x3C => { self.inc_accum(); } // INC A
+            0x0C => { self.inc("C"); }     // INC C
+            0x1C => { self.inc("E"); }     // INC E
+            0x2C => { self.inc("L"); }     // INC L
+            0x3C => { self.inc("A"); } // INC A
 
-            0x0D => { self.dec_c(); }     // DEC C
-            0x1D => { self.dec_e(); }     // DEC E
-            0x2D => { self.dec_l(); }     // DEC L
-            0x3D => { self.dec_accum(); } // DEC A
+            0x0D => { self.dec("C"); }     // DEC C
+            0x1D => { self.dec("E"); }     // DEC E
+            0x2D => { self.dec("L"); }     // DEC L
+            0x3D => { self.dec("A"); } // DEC A
 
             // ADD instructions
             0x80 => { let val = self.regs.b; self.add_accum(val); }           // ADD A, B
