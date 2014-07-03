@@ -70,9 +70,8 @@ macro_rules! ld {
                 $cpu.set_byte($val, hl);
                 $cpu.dec("HL");
             }
-            _ => {}
+            _ => { }
         };
-
     };
 }
 
@@ -138,7 +137,7 @@ impl CPU {
             "HL"    => { loc = self.hl() }
             "(HL-)" => { loc = self.hl(); self.dec("HL"); }
             "(HL+)" => { loc = self.hl(); self.inc("HL"); }
-            _       => {}
+            _       => { }
         };
         self.get_byte(loc)
     }
@@ -179,7 +178,6 @@ impl CPU {
         self.regs.flags & flag != 0
     }
 
-
     // Instructions
 
     fn inc(&mut self, register: &'static str) {
@@ -198,7 +196,7 @@ impl CPU {
                 self.set_byte(val, hl);
                 result = self.get_byte(hl) == 0;
             }
-            _   => {}
+            _   => { }
         };
         self.set_flag(ZERO, result);
         self.set_flag(SUBTRACT, false);
@@ -210,7 +208,7 @@ impl CPU {
             "DE" => { self.regs.e += 1; if self.regs.e == 0 { self.regs.d += 1; } }
             "HL" => { self.regs.l += 1; if self.regs.l == 0 { self.regs.h += 1; } }
             "SP" => { self.regs.sp += 1; }
-            _    => {}
+            _    => { }
         };
     }
     
@@ -230,7 +228,7 @@ impl CPU {
                 self.set_byte(val, hl);
                 result = self.get_byte(hl) == 0;
             }
-            _      => {}
+            _      => { }
         };
         self.set_flag(ZERO, result);
         self.set_flag(SUBTRACT, true);
@@ -242,7 +240,7 @@ impl CPU {
             "DE" => { if self.regs.e == 0 { self.regs.d -= 1; } self.regs.e -= 1; }
             "HL" => { if self.regs.l == 0 { self.regs.h -= 1; } self.regs.l -= 1; }
             "SP" => { self.regs.sp -= 1; }
-            _    => {}
+            _    => { }
         };
     }
 
@@ -338,15 +336,17 @@ impl CPU {
         }
     }
 
-    // Enable interrupts
+    // Enable interrupts (set ($FFFF) to 1)
     fn ei(&mut self) {
-        
+        self.mem[0xFFFF] = 1;
     }
 
     // Disable interrupts
     fn di(&mut self) {
-
+        self.mem[0xFFFF] = 0;
     }
+
+    // 
 
     // Adds a value to the accumulator, setting the carry and zero flags
     // as appropriate. Subtract flag is set to 0 when this is called.
@@ -375,6 +375,63 @@ impl CPU {
         self.set_flag(ZERO, false);
         self.set_flag(SUBTRACT, false);
         self.set_flag(CARRY, carry);
+    }
+
+    // Adds another register to HL. Sets carry flag as appropriate, subtract flag
+    // is set to 0 when this is called.
+    fn add_hl(&mut self, registers: &'static str) {
+        let mut carry = false;
+        match registers {
+            "BC" => {
+                if self.regs.l > 0xFF - self.regs.c {
+                    self.regs.h += 1;
+                }
+                self.regs.l += self.regs.c;
+                if self.regs.h > 0xFF - self.regs.b {
+                    self.regs.l += self.regs.h - 0xFF + self.regs.b;
+                    carry = true;
+                }
+                self.regs.h += self.regs.b;
+            }
+            "DE" => {
+                if self.regs.l > 0xFF - self.regs.e {
+                    self.regs.h += 1;
+                }
+                self.regs.l += self.regs.e;
+                if self.regs.h > 0xFF - self.regs.d {
+                    self.regs.l += self.regs.h - 0xFF + self.regs.d;
+                    carry = true;
+                }
+                self.regs.h += self.regs.d;
+            }
+            "HL" => {
+                if self.regs.l > 0xFF - self.regs.l {
+                    self.regs.h += 1;
+                }
+                self.regs.l += self.regs.l;
+                if self.regs.h > 0xFF - self.regs.h {
+                    self.regs.l += self.regs.h - 0xFF + self.regs.h;
+                    carry = true;
+                }
+                self.regs.h += self.regs.h;
+            }
+            "SP" => { 
+                let high = (self.regs.sp >> 8) as u8;
+                let low = self.regs.sp as u8;
+                if self.regs.l > 0xFF - low {
+                    self.regs.h += 1;
+                }
+                self.regs.l += low;
+                if self.regs.h > 0xFF - high {
+                    self.regs.l += self.regs.h - 0xFF + high;
+                    carry = true;
+                }
+                self.regs.h += high;
+            }
+            _ => { }
+        };
+        self.set_flag(CARRY, carry);
+        self.set_flag(SUBTRACT, false);
     }
 
     // Adds a value with carry bit to the accumulator, setting the carry and zero flags
@@ -455,6 +512,107 @@ impl CPU {
         self.set_flag(CARRY, accum >= val);
     }
 
+    // Rotate bits right through carry in accumulator. 
+    // Bit zero will rotate into bit seven as follows:
+    //   ________________________________________
+    //  |                                        |
+    //  -> 7 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1 -> 0 ---> C
+    fn rrca(&mut self) {
+        let bit = self.regs.accum & 0x1 != 0;
+        self.regs.accum >>= 1;
+        if bit {
+            self.regs.accum |= 0x80;
+        }
+        self.set_flag(CARRY, bit);
+        self.set_flag(ZERO, false);
+        self.set_flag(SUBTRACT, false);
+    }
+
+    // Rotate bits right in accumulator.
+    // Carry bit rotates into bit seven as follows:
+    //  ____________________________________________
+    // |                                            |
+    // -> 7 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1 -> 0 ---> C
+    fn rra(&mut self) {
+        let bit = self.regs.accum & 0x1 != 0;
+        let carry = self.get_flag(CARRY);
+        self.regs.accum >>= 1;
+        if carry {
+            self.regs.accum |= 0x80;
+        }
+        self.set_flag(CARRY, bit);
+        self.set_flag(ZERO, false);
+        self.set_flag(SUBTRACT, false);
+    }
+
+    // Rotate bits left through carry in accumulator. Inverse of RRCA.
+    //       __________________________________________
+    //      |                                          |
+    //  C <--- 7 <- 6 <- 5 <- 4 <- 3 <- 2 <- 1 <- 0 <---
+    fn rlca(&mut self) {
+        let bit = self.regs.accum & 0x80 != 0;
+        self.regs.accum <<= 1;
+        if bit {
+            self.regs.accum |= 0x1;
+        }
+        self.set_flag(CARRY, bit);
+        self.set_flag(ZERO, false);
+        self.set_flag(SUBTRACT, false);
+    }
+
+    // Rotate bits left in accumulator. Inverse of RRA.
+    //   ______________________________________________
+    //  |                                              |
+    //  C <--- 7 <- 6 <- 5 <- 4 <- 3 <- 2 <- 1 <- 0 <---
+    fn rla(&mut self) {
+        let bit = self.regs.accum & 0x80 != 0;
+        let carry = self.get_flag(CARRY);
+        self.regs.accum <<= 1;
+        if carry {
+            self.regs.accum |= 0x1;
+        }
+        self.set_flag(CARRY, bit);
+        self.set_flag(ZERO, false);
+        self.set_flag(SUBTRACT, false);
+    }
+
+    fn daa(&mut self) {
+
+    }
+
+    // Set carry flag.
+    fn scf(&mut self) {
+        self.set_flag(SUBTRACT, false);
+        self.set_flag(CARRY, true);
+    }
+
+    // XOR accumulator with 0xFF.
+    fn cpl(&mut self) {
+        self.regs.accum ^= 0xFF;
+        self.set_flag(SUBTRACT, true);
+    }
+
+    // XOR carry flag with 0x1.
+    fn ccf(&mut self) {
+        let carry = self.get_flag(CARRY);
+        self.set_flag(CARRY, (carry as u8 ^ 1) != 0);
+        self.set_flag(SUBTRACT, false);
+    }
+
+    fn rst(&mut self, address: &'static str) {
+        match address {
+            "00H" => { self.call(0x0000); }
+            "08H" => { self.call(0x0008); }
+            "10H" => { self.call(0x0010); }
+            "18H" => { self.call(0x0018); }
+            "20H" => { self.call(0x0020); }
+            "28H" => { self.call(0x0028); }
+            "30H" => { self.call(0x0030); }
+            "38H" => { self.call(0x0038); }
+            _     => { }
+        }
+    }
+
     // Executes one fetch-decode-execute cycle on the CPU
     fn step(&mut self) {
         let op = self.mem[self.regs.pc as uint];
@@ -467,7 +625,7 @@ impl CPU {
     fn decode_op(&mut self, op: u8) {
         match op {
             // NOP
-            0x00 => {}
+            0x00 => { }
 
             // LD operations
             0x01 => { self.regs.c = self.next_byte(); self.regs.b = self.next_byte(); } // LD BC, d16
@@ -628,6 +786,7 @@ impl CPU {
             0x1D => { self.dec("E"); } // DEC E
             0x2D => { self.dec("L"); } // DEC L
             0x3D => { self.dec("A"); } // DEC A
+            0x27 => { self.daa(); }    // DAA
 
             // ADD instructions
             0x80 => { let val = self.regs.b; self.add_accum(val); }            // ADD A, B
@@ -640,6 +799,10 @@ impl CPU {
             0x87 => { let val = self.regs.accum; self.add_accum(val); }        // ADD A, A
             0xC6 => { let val = self.next_byte(); self.add_accum(val); }       // ADD A, d8
             0xE8 => { let val = self.next_byte(); self.add_sp(val); }          // ADD SP, r8
+            0x09 => { self.add_hl("BC"); }                                     // ADD HL, BC
+            0x19 => { self.add_hl("DE"); }                                     // ADD HL, DE
+            0x29 => { self.add_hl("HL"); }                                     // ADD HL, HL
+            0x39 => { self.add_hl("SP"); }                                     // ADD HL, SP
 
             // ADC instructions
             0x88 => { let val = self.regs.b; self.adc_accum(val); }            // ADC A, B
@@ -717,6 +880,12 @@ impl CPU {
             0xBE => { let val = self.direct_addr("HL"); self.cp_accum(val); } // CP A, (HL)
             0xBF => { let val = self.regs.accum; self.cp_accum(val); }        // CP A, A
             0xFE => { let val = self.next_byte(); self.cp_accum(val); }       // CP A, d8
+            
+            // ROTATE instructions
+            0x07 => { self.rlca(); } // RLCA
+            0x17 => { self.rla(); }  // RLA
+            0x0F => { self.rrca(); } // RRCA
+            0x1F => { self.rra(); }  // RRA
 
             // JR instructions
             0x20 => { let offset = self.next_byte(); self.jr_not_flag(offset, ZERO); }  // JR NZ, r8
@@ -758,11 +927,28 @@ impl CPU {
             0xE5 => { let hl = self.hl() as u16; self.push(hl); } // PUSH HL
             0xF5 => { let af = self.af() as u16; self.push(af); } // PUSH AF
             
-            // EI/DI instructions (interrupts)
-            0xF3 => { self.di(); } // DI
-            0xFB => { self.ei(); } // EI
+            // CPU control instructions
+            0x37 => { self.scf(); } // SCF
+            0x2F => { self.cpl(); } // CPL
+            0x3F => { self.ccf(); } // CCF
+            0xF3 => { self.di(); }  // DI
+            0xFB => { self.ei(); }  // EI
 
-            _ => println!("Opcode not implemented yet.")
+            // RST instructions
+            0xC7 => { self.rst("00H"); }
+            0xCF => { self.rst("08H"); }
+            0xD7 => { self.rst("10H"); }
+            0xDF => { self.rst("18H"); }
+            0xE7 => { self.rst("20H"); }
+            0xEF => { self.rst("28H"); }
+            0xF7 => { self.rst("30H"); }
+            0xFF => { self.rst("38H"); }
+
+            // CB instructions
+            // TODO: giant switch table
+            0xCB => { }
+
+            _ => println!("Opcode not implemented yet."),
         };
     }
 }
