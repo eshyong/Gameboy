@@ -1,4 +1,5 @@
 #![feature(macro_rules)]
+#![crate_id = "cpu"]
 
 static ZERO:       u8 = 0x80;
 static SUBTRACT:   u8 = 0x40;
@@ -33,7 +34,22 @@ struct Regs {
     pc: u16,
 }
 
-struct CPU {
+impl Regs {
+    fn zero(&mut self) {
+        self.accum = 0;
+        self.flags = 0;
+        self.b = 0;
+        self.c = 0;
+        self.d = 0;
+        self.e = 0;
+        self.h = 0;
+        self.l = 0;
+        self.sp = 0;
+        self.pc = 0;
+    }
+}
+
+pub struct CPU {
     regs: Regs,
     mem: [u8, ..0x10000],
 }
@@ -76,7 +92,7 @@ macro_rules! ld {
 }
 
 impl CPU {
-    fn new() -> CPU {
+    pub fn new() -> CPU {
         CPU {
             // Set everything to 0
             regs: Regs {
@@ -96,17 +112,34 @@ impl CPU {
     }
 
     // Print out register values for debugging
-    fn dump_registers(&self) {
-        println!("accumulator: {}", self.regs.accum);
-        println!("flags: {}", self.regs.flags);
-        println!("b: {}", self.regs.b);
-        println!("c: {}", self.regs.c);
-        println!("d: {}", self.regs.d);
-        println!("e: {}", self.regs.e);
-        println!("h: {}", self.regs.h);
-        println!("l: {}", self.regs.l);
-        println!("sp: {}", self.regs.sp);
-        println!("pc: {}", self.regs.pc);
+    pub fn dump_registers(&self) {
+        println!("accumulator: 0x{:x}", self.regs.accum);
+        println!("flags: 0x{:x}", self.regs.flags);
+        println!("b: 0x{:x}", self.regs.b);
+        println!("c: 0x{:x}", self.regs.c);
+        println!("d: 0x{:x}", self.regs.d);
+        println!("e: 0x{:x}", self.regs.e);
+        println!("h: 0x{:x}", self.regs.h);
+        println!("l: 0x{:x}", self.regs.l);
+        println!("sp: 0x{:x}", self.regs.sp);
+        println!("pc: 0x{:x}", self.regs.pc);
+    }
+
+    pub fn dump_mem(&self) {
+        println!("all memory");
+        let length = self.mem.len();
+        for i in range(0, length) {
+            print!("0x{:x} ", self.mem[i]);
+        }
+        println!("");
+    }
+
+    pub fn dump_some_mem(&self, low: uint, high: uint) {
+        println!("memory from range {} to {}", low, high);
+        for i in range(low, high) {
+            print!("0x{:x} ", self.mem[i]);
+        }
+        println!("");
     }
 
     // Get BC as an unsigned integer
@@ -121,7 +154,10 @@ impl CPU {
 
     // Get HL as an unsigned integer
     fn hl(&mut self) -> uint {
-        ((self.regs.h << 8) & self.regs.l) as uint
+        let val = ((self.regs.h << 8) & self.regs.l) as uint;
+        println!("HL: 0x{:x}", val);
+        val
+        //((self.regs.h << 8) & self.regs.l) as uint
     }
     
     // Get AF (accumulator flags) as an unsigned integer
@@ -156,7 +192,7 @@ impl CPU {
     }
 
     // Get byte in memory specified by location
-    fn get_byte(&self, location: uint) -> u8 {
+    pub fn get_byte(&self, location: uint) -> u8 {
         self.mem[location]
     }
 
@@ -613,11 +649,29 @@ impl CPU {
         }
     }
 
+    pub fn load_code(&mut self, code: &[u8]) {
+        assert!(code.len() < 0x8000);
+        let length = code.len();
+        for i in range(0, length) {
+            self.mem[i] = code[i];
+        }
+    }
+
     // Executes one fetch-decode-execute cycle on the CPU
-    fn step(&mut self) {
+    pub fn step(&mut self, debug: bool) {
         let op = self.mem[self.regs.pc as uint];
+        if (debug) {
+            println!("opcode: {:x}", op);
+        }
         self.decode_op(op);
         self.regs.pc += 1;
+    }
+
+    pub fn reset(&mut self) {
+        self.regs.zero();
+        for i in range(0, self.mem.len()) {
+            self.mem[i] = 0;
+        }
     }
 
     // Decode opcode! Game Boy is little endian, so immediate values (d8, d16, a8, a16, r8) are in reverse order.
@@ -638,10 +692,15 @@ impl CPU {
             0x22 => { let v = self.regs.accum; ld!("(HL+)", v, self); } // LD (HL+), A
             0x32 => { let v = self.regs.accum; ld!("(HL-)", v, self); } // LD (HL-), A
 
-            0x06 => { self.regs.b = self.next_byte(); }                       // LD B, d8
-            0x16 => { self.regs.d = self.next_byte(); }                       // LD D, d8
-            0x26 => { self.regs.h = self.next_byte(); }                       // LD H, d8
-            0x36 => { let byte = self.next_byte(); ld!("(HL)", byte, self); } // LD (HL), d8
+            0x06 => { let v = self.next_byte(); ld!("B", v, self); }       // LD B, d8
+            0x16 => { let v = self.next_byte(); ld!("D", v, self); }       // LD D, d8
+            0x26 => { let v = self.next_byte(); ld!("H", v, self); }       // LD H, d8
+            0x36 => { let v = self.next_byte(); ld!("(HL)", v, self); } // LD (HL), d8
+
+            0x0E => { let v = self.next_byte(); ld!("C", v, self); } // LD C, d8
+            0x1E => { let v = self.next_byte(); ld!("E", v, self); } // LD E, d8
+            0x2E => { let v = self.next_byte(); ld!("L", v, self); } // LD L, d8
+            0x3E => { let v = self.next_byte(); ld!("A", v, self); } // LD A, d8
 
             0x08 => { // LD (a16), SP
                 let sp = self.regs.sp;
@@ -954,15 +1013,7 @@ impl CPU {
 }
 
 fn main() {
-    let mut cpu: CPU = CPU::new();
-    println!("It compiles!");
-    cpu.dump_registers();
-    cpu.decode_op(0x80);
-    cpu.dump_registers();
-    cpu.decode_op(0x81);
-    cpu.dump_registers();
-    cpu.decode_op(0x8F);
-    cpu.dump_registers();
+    println!("GameBoy Nintendo(R)");
 }
 
 // End of cpu.rs
