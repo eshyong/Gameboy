@@ -144,25 +144,22 @@ impl CPU {
 
     // Get BC as an unsigned integer
     fn bc(&mut self) -> uint {
-        ((self.regs.b << 8) & self.regs.c) as uint
+        (self.regs.b as uint << 8) | self.regs.c as uint
     }
 
     // Get DE as an unsigned integer
     fn de(&mut self) -> uint {
-        ((self.regs.d << 8) & self.regs.e) as uint
+        (self.regs.d as uint << 8) | self.regs.e as uint
     }
 
     // Get HL as an unsigned integer
     fn hl(&mut self) -> uint {
-        let val = ((self.regs.h << 8) & self.regs.l) as uint;
-        println!("HL: 0x{:x}", val);
-        val
-        //((self.regs.h << 8) & self.regs.l) as uint
+        (self.regs.h as uint << 8) | self.regs.l as uint
     }
     
     // Get AF (accumulator flags) as an unsigned integer
     fn af(&mut self) -> uint {
-        ((self.regs.accum << 8) & self.regs.flags) as uint
+        (self.regs.accum as uint << 8) | self.regs.flags as uint
     }
 
     fn direct_addr(&mut self, registers: &'static str) -> u8 {
@@ -187,7 +184,7 @@ impl CPU {
     // Increment the PC twice and get the next two bytes as a short
     fn next_short(&mut self) -> u16 {
         let mut short = self.next_byte() as u16;
-        short &= self.next_byte() as u16 << 8;
+        short |= self.next_byte() as u16 << 8;
         short
     }
 

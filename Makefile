@@ -1,10 +1,10 @@
 RUSTC=rustc
 RFLAGS=--out-dir=build
 OUTPUTLIB=--crate-type=lib --out-dir=lib
-TESTFLAGS=-L./lib --out-dir=test
+TESTFLAGS=-L./lib 
 
 clean: 
-	rm build/cpu test/ld lib/*.rlib
+	rm build/cpu ld lib/*.rlib
 
 all: src/cpu.rs
 	$(RUSTC) $(RFLAGS) src/cpu.rs
