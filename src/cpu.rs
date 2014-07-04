@@ -111,6 +111,22 @@ impl CPU {
         }
     }
 
+    pub fn dump_register(&self, register: &'static str) {
+        match register {
+            "A"  => println!("accumulator: 0x{:x}", self.regs.accum),
+            "F"  => println!("flags: 0x{:x}", self.regs.flags),
+            "B"  => println!("b: 0x{:x}", self.regs.b),
+            "C"  => println!("c: 0x{:x}", self.regs.c),
+            "D"  => println!("d: 0x{:x}", self.regs.d),
+            "E"  => println!("e: 0x{:x}", self.regs.e),
+            "H"  => println!("h: 0x{:x}", self.regs.h),
+            "L"  => println!("l: 0x{:x}", self.regs.l),
+            "SP" => println!("sp: 0x{:x}", self.regs.sp),
+            "PC" => println!("pc: 0x{:x}", self.regs.pc),
+            _    => { }
+        };
+    }
+
     // Print out register values for debugging
     pub fn dump_registers(&self) {
         println!("accumulator: 0x{:x}", self.regs.accum);

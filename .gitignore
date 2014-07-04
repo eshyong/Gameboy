@@ -2,7 +2,6 @@ cpu
 *.swp
 *.asm
 *.ll
-lib/libcpu*.rlib
-test/ld
-build/*
+lib/*
+build/
 ld
